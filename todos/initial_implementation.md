@@ -31,10 +31,15 @@
 
 - [x] Review implemented code paths against current SPEC acceptance criteria
 - [x] Run `uv run pytest -q` and fix failures
-- [ ] Run app smoke command: `uv run python -m src.app.main` (startup succeeds)
-- [ ] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed` (run completes + report emitted)
-- [ ] Run review smoke command: `uv run python -m src.ingest.review` (manual review loop starts)
-- [ ] After M5 lands, run ranking/AI/analysis smoke commands end to end
+- [x] Run app smoke command: `uv run python -m src.app.main` and verify startup log/no import errors
+- [ ] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
+- [ ] Verify extraction artifacts were emitted to `data/processed/` (including a digitization report)
+- [ ] Run review smoke command: `uv run python -m src.ingest.review` and verify manual-review loop starts
+- [ ] Run ranking smoke command (human): `uv run python -m src.ranking.run --population human --algorithm bradley_terry`
+- [ ] Run ranking smoke command (AI): `uv run python -m src.ranking.run --population ai --algorithm bradley_terry`
+- [ ] Run AI voter smoke command: `uv run python -m src.ai_user.run --pairs 200 --model <model_name>`
+- [ ] Run analysis smoke command: `uv run python -m src.analysis.compare --human-run <id> --ai-run <id>`
+- [ ] Verify end-to-end artifacts were emitted to `outputs/` with required metrics/disagreement lists
 
 ## Next task queue (ordered, actionable)
 
@@ -46,11 +51,23 @@
 - [x] Implement required metric calculations and disagreement extraction
 - [x] Write outputs to `outputs/` and add/adjust tests in `tests/` for M5 coverage
 - [x] Run `uv run pytest -q` and resolve any new failures
+- [x] Execute app startup smoke check and capture pass/fail result
+- [ ] Execute ingestion extraction smoke check and confirm report path
+- [ ] Execute manual review CLI smoke check and confirm interactive entry
+- [ ] Execute human+AI ranking smoke commands and record produced run IDs
+- [ ] Execute analysis compare command with latest run IDs and verify output files
 
 ## Verification notes (latest run)
 
 - 2026-03-28: `uv run pytest -q` -> 30 passed (4 deprecation warnings from FastAPI `on_event` and `datetime.utcnow()` usage)
+- 2026-03-28 11:52 CET: `uv sync --dev` removed `jinja2`/`python-multipart`; `uv run python -m src.app.main` failed with `ImportError: jinja2 must be installed to use Jinja2Templates`.
+- 2026-03-28 11:52 CET: Added runtime deps in `pyproject.toml` (`jinja2`, `python-multipart`), re-ran `uv sync --dev`, then `uv run python -m src.app.main` reached uvicorn serving state (pass; stopped by smoke-check timeout).
+- 2026-03-28 11:52 CET: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed` failed with `TesseractNotFoundError` (`tesseract` binary missing in PATH); `data/processed/` has no artifacts/report.
+- 2026-03-28 11:52 CET: `uv run python -m src.ingest.review` ran but exited with `No cards found with status='extracted'` (blocked by failed extraction; no interactive review prompt).
+- 2026-03-28 11:52 CET: Ranking smoke commands for human/ai both returned `no_approved_cards`; no ranking run IDs produced.
+- 2026-03-28 11:52 CET: `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1` returned `insufficient_pairs_available` (dataset precondition not met).
+- 2026-03-28 11:52 CET: `uv run python -m src.analysis.compare --human-run 1 --ai-run 1` returned `ranking_run_not_found:1`; `outputs/` has no generated artifacts.
 
 ## Immediate next task
 
-- [x] Start M5 by implementing `src/analysis/compare.py` CLI scaffold plus metric computation helpers, then backfill tests
+- [ ] Install/configure Tesseract and rerun ingestion smoke command to generate processed artifacts/report
