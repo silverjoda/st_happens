@@ -32,9 +32,10 @@
 - [x] Review implemented code paths against current SPEC acceptance criteria
 - [x] Run `uv run pytest -q` and fix failures
 - [x] Run app smoke command: `uv run python -m src.app.main` and verify startup log/no import errors
-- [ ] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
-- [ ] Verify extraction artifacts were emitted to `data/processed/` (including a digitization report)
-- [ ] Run review smoke command: `uv run python -m src.ingest.review` and verify manual-review loop starts
+- [x] Install/configure Tesseract on host and verify binary is on PATH (`tesseract --version`)
+- [x] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
+- [x] Verify extraction artifacts were emitted to `data/processed/` (including a digitization report)
+- [x] Run review smoke command: `uv run python -m src.ingest.review` and verify manual-review loop starts
 - [ ] Run ranking smoke command (human): `uv run python -m src.ranking.run --population human --algorithm bradley_terry`
 - [ ] Run ranking smoke command (AI): `uv run python -m src.ranking.run --population ai --algorithm bradley_terry`
 - [ ] Run AI voter smoke command: `uv run python -m src.ai_user.run --pairs 200 --model <model_name>`
@@ -52,10 +53,13 @@
 - [x] Write outputs to `outputs/` and add/adjust tests in `tests/` for M5 coverage
 - [x] Run `uv run pytest -q` and resolve any new failures
 - [x] Execute app startup smoke check and capture pass/fail result
-- [ ] Execute ingestion extraction smoke check and confirm report path
-- [ ] Execute manual review CLI smoke check and confirm interactive entry
+- [x] Install/configure Tesseract and verify availability (`tesseract --version`)
+- [x] Execute ingestion extraction smoke check and confirm report path
+- [x] Execute manual review CLI smoke check and confirm interactive entry
 - [ ] Execute human+AI ranking smoke commands and record produced run IDs
+- [ ] Execute AI voter smoke command with concrete model name (e.g., `heuristic_v1`)
 - [ ] Execute analysis compare command with latest run IDs and verify output files
+- [ ] Mark remaining smoke-check items complete in this TODO after successful command evidence
 
 ## Verification notes (latest run)
 
@@ -70,7 +74,13 @@
 - 2026-03-28 11:52 CET: Ranking smoke commands for human/ai both returned `no_approved_cards`; no ranking run IDs produced.
 - 2026-03-28 11:52 CET: `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1` returned `insufficient_pairs_available` (dataset precondition not met).
 - 2026-03-28 11:52 CET: `uv run python -m src.analysis.compare --human-run 1 --ai-run 1` returned `ranking_run_not_found:1`; `outputs/` has no generated artifacts.
+- 2026-03-28 12:00 CET: Installed Tesseract via Homebrew; `tesseract --version` now reports `tesseract 5.5.2`.
+- 2026-03-28 12:00 CET: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed` -> Processed=200, Successes=66, Failures=134; reports emitted at `data/processed/ingestion_report_20260328T105934Z.json` and `data/processed/ingestion_report_20260328T105934Z.md`.
+- 2026-03-28 12:01 CET: `uv run python -m src.ingest.review` entered interactive loop (`Card 1/200`, `review>` prompt), then terminated with `EOFError` in non-interactive smoke environment.
+- 2026-03-28 12:01 CET: Ranking smoke rerun (`human` + `ai`) still returns `no_approved_cards`; no run IDs produced because extracted cards are not yet approved.
+- 2026-03-28 12:01 CET: `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1` still returns `insufficient_pairs_available`.
+- 2026-03-28 12:02 CET: `uv run python -m src.analysis.compare --human-run 1 --ai-run 1` returns `ranking_run_not_found:1`; `outputs/` remains empty.
 
 ## Immediate next task
 
-- [ ] Install/configure Tesseract and rerun ingestion smoke command to generate processed artifacts/report
+- [ ] Approve extracted cards via `uv run python -m src.ingest.review`, then rerun ranking smoke commands to obtain valid human/ai run IDs
