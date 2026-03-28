@@ -1,136 +1,137 @@
 initial_implementation
 
-# Implementation plan: next pending todo items (Tesseract unblock + dependent smoke checks)
+# Implementation plan: next pending todo items (manual approvals -> ranking/AI/analysis smoke)
 
 ## Scope
 
-This plan is intentionally tight to the next unchecked work in `todos/initial_implementation.md`, starting with the immediate blocker:
+This plan is tightly scoped to the first unchecked items in `todos/initial_implementation.md`:
 
-1. Install/configure Tesseract and verify `tesseract --version`.
-2. Rerun ingestion extraction and confirm `data/processed/` artifacts (including digitization report).
-3. Rerun the currently blocked downstream smoke checks that depend on approved cards/ranking outputs.
-4. Update TODO checkboxes and verification notes with concrete command evidence.
+1. Complete manual review approvals until the dataset is usable (target: at least 95% approved).
+2. Confirm ranking and AI-voter preconditions from approved-card counts and pairability.
+3. Run blocked smoke checks (ranking human/ai, AI voter, analysis compare) and capture evidence.
+4. Update TODO checkboxes and verification notes with concrete command results and artifact paths.
 
-Out of scope: feature development, algorithm changes, schema changes, refactors, and test rewrites.
+Out of scope: new feature work, schema changes, refactors, ranking algorithm changes, and test-suite expansion.
 
 ## Spec and prompt alignment
 
-- FR-1 requires successful extraction from `data/raw_photos/` and digitization report output.
-- FR-1a requires review flow to start and operate on extracted cards.
-- FR-5/FR-6/FR-7 smoke checks are currently blocked by missing ingestion output and must be rerun after unblock.
-- Section 11 command surface is validated using the existing `uv run ...` entrypoints.
-- Prompt constraint (first iteration): pragmatic unblock and verification, minimal code churn.
+- FR-1a and acceptance criteria require a real manual review/approval pass and approved-card gating.
+- FR-5/FR-6/FR-7 require successful ranking, AI voting, and comparison report generation.
+- Section 11 required command surface is exercised directly via `uv run ...` commands.
+- Prompt asks for pragmatic first-iteration delivery: finish blocked operational steps with minimal churn.
 
 ## Detailed implementation plan
 
-## 1) Environment unblock: Tesseract availability
+## 1) Finish manual review approvals (primary blocker)
 
 ### Goal
-Satisfy the host dependency precondition that previously caused `TesseractNotFoundError`.
+Move cards from `extracted` into final review states (`approved`, `needs_fix`, `rejected`) so downstream ranking is unblocked.
 
 ### Work items
-1. Confirm package manager path for host OS (macOS expected; Homebrew default).
-2. Install Tesseract if missing (or repair PATH if already installed but unresolved).
-3. Run `tesseract --version` from repo root shell and record output headline.
-4. Capture timestamped pass/fail note in `todos/initial_implementation.md` verification notes.
+1. Run `uv run python -m src.ingest.review` in an interactive shell.
+2. Iterate through all extracted cards and apply status decisions:
+   - approve cards with correct description/score,
+   - edit/fix OCR fields when recoverable,
+   - reject unusable extracts.
+3. Keep scoring consistent with SPEC constraints (numeric score, 0.5-increment compatible where applicable).
+4. Complete pass until extracted queue is exhausted or approval target is reached.
 
 ### Done when
-- The command `tesseract --version` succeeds without PATH errors.
-- TODO item "Install/configure Tesseract and verify availability" can be checked.
+- At least 95% of cards are `approved` (project acceptance target), or a clear blocker is documented.
+- TODO item `Complete manual review approvals...` is checked or annotated with exact blocker evidence.
 
-## 2) Ingestion smoke rerun and artifact verification
+## 2) Validate preconditions for ranking and AI voter
 
 ### Goal
-Produce extracted card outputs needed for all remaining smoke checks.
-
-### Command
-`uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
+Confirm there are enough approved cards and pair combinations to support ranking and AI voting commands.
 
 ### Work items
-1. Execute extraction and capture summary counts (processed/succeeded/failed).
-2. Verify `data/processed/` contains fresh artifacts for the run.
-3. Identify and record the digitization report path explicitly.
-4. If failures remain, record precise failure reason(s) and stop downstream checks that require approved cards.
+1. Verify approved-card count from current DB state (using existing project tooling/queries).
+2. Confirm pairability is sufficient for requested AI run volume (`--pairs 200`) or choose a lower safe pair count for smoke if needed.
+3. Record quantitative precondition evidence in verification notes.
 
 ### Done when
-- Extraction command completes successfully (or has explicitly documented blocker).
-- TODO items for ingestion smoke and processed/report verification are updated accurately.
+- TODO item `Verify approved-card precondition for ranking...` is checked.
+- Precondition numbers are written in `todos/initial_implementation.md` verification notes.
 
-## 3) Manual review CLI smoke rerun
-
-### Goal
-Confirm review loop now starts against extracted cards (not empty-state blocked).
-
-### Command
-`uv run python -m src.ingest.review`
-
-### Work items
-1. Start review command after extraction run.
-2. Verify entry into interactive review flow (prompt/menu/card loop).
-3. Exit cleanly after startup verification; record observed behavior.
-
-### Done when
-- Manual review smoke TODO item is checked or annotated with a concrete new blocker.
-
-## 4) Ranking smoke rerun (human + AI)
+## 3) Run ranking smoke commands and capture run IDs
 
 ### Goal
-Generate ranking runs now that approved-card precondition is expected to be met.
+Generate valid ranking runs for both populations to unblock analysis.
 
 ### Commands
 - `uv run python -m src.ranking.run --population human --algorithm bradley_terry`
 - `uv run python -m src.ranking.run --population ai --algorithm bradley_terry`
 
 ### Work items
-1. Run both commands sequentially and capture emitted run IDs.
-2. Record key output context (card count and completion status).
-3. Add run IDs to verification notes for direct use in compare command.
+1. Execute both commands after approvals/precondition checks pass.
+2. Record produced run IDs and key command outcome lines.
+3. Update TODO ranking items and add run IDs to verification notes for reuse by compare command.
 
 ### Done when
-- Ranking smoke TODO item is checked with concrete run IDs recorded.
+- Human and AI ranking smoke TODO items are checked.
+- Both run IDs are available and documented.
 
-## 5) AI voter + analysis smoke rerun
+## 4) Run AI voter smoke with concrete model config
 
 ### Goal
-Complete remaining end-to-end smoke checks after ingestion/ranking unblock.
+Create an AI session/comparison batch that satisfies FR-6 actor separation and provides fresh comparison data.
 
-### Commands
+### Command
 - `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1`
+
+### Work items
+1. Execute with `heuristic_v1` (or reduce pair count only if precondition check requires it).
+2. Record session ID and summary stats emitted by the runner.
+3. Confirm data persisted under `actor_type = ai` behavior path.
+
+### Done when
+- AI voter smoke TODO item is checked.
+- Session/run metadata is captured in verification notes.
+
+## 5) Run comparative analysis smoke and verify output artifacts
+
+### Goal
+Produce required comparison outputs once valid human/AI run IDs exist.
+
+### Command
 - `uv run python -m src.analysis.compare --human-run <human_id> --ai-run <ai_id>`
 
 ### Work items
-1. Run AI voter command and capture session/result metadata (or explicit environment blocker).
-2. Run compare command with latest valid run IDs.
-3. Verify expected files are written to `outputs/` and include required metrics/disagreement content.
+1. Execute compare command using latest recorded run IDs.
+2. Verify artifacts are emitted to `outputs/`.
+3. Confirm report content includes required metrics and disagreement lists.
 
 ### Done when
-- AI voter and analysis smoke TODO items are checked, or blockers are documented with exact error tokens.
+- Analysis smoke TODO item and output-verification TODO item are checked.
+- Output file paths are captured in verification notes.
 
-## 6) Todo and evidence closeout
+## 6) Closeout in TODO tracker
 
 ### Goal
-Leave `todos/initial_implementation.md` as the single accurate status log.
+Keep `todos/initial_implementation.md` as accurate source of truth after each step.
 
 ### Work items
-1. Check completed items immediately after each successful command.
-2. For failures, leave unchecked and add one-line remediation note in verification notes.
-3. Update `## Immediate next task` to the first remaining unchecked actionable item.
+1. Immediately check each completed task item.
+2. Leave failed items unchecked and add timestamped failure/blocker note with exact error token/message.
+3. Update `## Immediate next tasks` to the first still-pending actionable item.
 
 ### Done when
-- TODO state and verification notes are consistent, current, and auditable.
+- Remaining unchecked items (if any) represent true blockers only.
+- Evidence trail is sufficient to reproduce outcomes.
 
-## Execution order (strict)
+## Execution order
 
-1. Tesseract install/PATH verification.
-2. Ingestion extraction rerun + processed/report verification.
-3. Manual review rerun.
-4. Human and AI ranking reruns (collect run IDs).
-5. AI voter rerun.
-6. Analysis compare rerun.
-7. TODO/verification-note closeout.
+1. Complete full manual review/approval pass.
+2. Confirm approved-card and pairability preconditions.
+3. Run human ranking smoke and record run ID.
+4. Run AI ranking smoke and record run ID.
+5. Run AI voter smoke and record session metadata.
+6. Run analysis compare smoke with latest run IDs.
+7. Update TODO checkboxes and verification notes.
 
 Completion criteria:
 
-- The Tesseract dependency blocker is resolved or explicitly documented as external.
-- All currently pending smoke-check TODOs have a fresh pass/fail/blocked status.
-- Required artifact evidence is recorded for `data/processed/` and `outputs/`.
+- Manual-review and precondition items are complete with quantitative evidence.
+- Ranking, AI voter, and analysis smoke commands complete with valid IDs/artifacts.
+- `outputs/` contains comparison artifacts with required metrics/disagreement sections.

@@ -68,6 +68,9 @@
 
 ## Verification notes (latest run)
 
+- 2026-03-28 12:17 CET: Re-reviewed implementation against `SPEC.md` and this TODO checklist; existing checked items are still backed by implemented code/tests, and intentionally blocked items remain unchecked.
+- 2026-03-28 12:17 CET: `uv run pytest -q` -> 30 passed (same 4 deprecation warnings: FastAPI `on_event`, `datetime.utcnow()`).
+- 2026-03-28 12:17 CET: `tesseract --version` -> `tesseract 5.5.2` (PATH OK).
 - 2026-03-28 12:10 CET: Audited checklist against implementation/tests; completed items remain checked and blocked smoke items remain unchecked.
 - 2026-03-28 12:10 CET: `uv run pytest -q` -> 30 passed (same 4 deprecation warnings: FastAPI `on_event`, `datetime.utcnow()`).
 - 2026-03-28 12:10 CET: `tesseract --version` -> `tesseract 5.5.2` (PATH OK).
