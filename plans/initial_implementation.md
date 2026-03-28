@@ -1,126 +1,119 @@
 initial_implementation
 
-# Implementation plan: next pending todo items (M2/M3 stabilization)
+# Implementation plan: next pending todo items (M4 AI voter integration)
 
 ## Scope (tight to immediate unchecked items)
 
-This plan covers only the next pending items listed in `todos/initial_implementation.md` under "Current actionable next tasks (ordered)" and matching unchecked M2/M3 stabilization tasks:
+This plan covers the next pending items in `todos/initial_implementation.md`, limited to M4 and its immediate queue entries:
 
-1. M2: fix FastAPI/Jinja template rendering compatibility regression.
-2. M2: eliminate detached-instance usage in pair-selection/session routes.
-3. M2: get `tests/test_app_sessions_m2.py` fully green.
-4. M3: fix Bradley-Terry convergence and deterministic behavior on synthetic fixture.
-5. M3: ensure ranking result access paths are detached-safe in tests/runtime flow.
-6. M3: get `tests/test_ranking_m3.py` fully green.
-7. Run full `uv run pytest -q` to confirm no cross-area regressions.
+1. Create `src/ai_user/run.py` runner for description-only pair voting.
+2. Persist AI sessions/comparisons with `sessions.actor_type = ai`.
+3. Persist AI run configuration metadata (`model`, `prompt_style`, `temperature`, `seed`).
+4. Add focused tests for persistence and actor separation.
 
-Out of scope: M4 AI voter, M5 analysis reporting, and non-blocking smoke commands.
+Out of scope: M5 analysis CLI/reporting and post-M4 smoke-command checklist items.
 
 ## Spec + prompt alignment
 
-- FR-2 + App validation requirements: session start, pair presentation, vote persistence, and completion behavior must work reliably through route-level tests.
-- FR-5 + Section 12 + Ranking validation requirements: Bradley-Terry must fit pairwise worse-choice events, normalize outputs to `[1, 100]`, and be reproducible with seed support.
-- NFR reproducibility/transparency: keep strategy/seed and ranking diagnostics persisted for auditability.
-- Prompt guidance: first-iteration pragmatism; minimal targeted fixes instead of broader refactors.
+- FR-6: AI voter runs as a separate actor, consumes description-only text, and writes results as AI sessions.
+- FR-3 + NFR reproducibility: pair strategy and deterministic seed must be logged and replayable.
+- FR-4 auditability: persisted records must tie AI-generated comparisons to run/session metadata.
+- Section 11 command surface: support `uv run python -m src.ai_user.run --pairs <n> --model <model_name>`.
+- Prompt guidance: first-iteration pragmatic implementation, minimal abstraction, maintainable structure.
 
 ## Detailed implementation plan
 
-## 1) M2 regression triage and compatibility fixes
+## 1) Define M4 runner contract and CLI surface
 
 ### Goal
-Resolve current M2 failures without changing product behavior or route contracts.
+Add a runnable AI-voter entrypoint with stable arguments and explicit defaults.
 
 ### Files in focus
-- `src/app/main.py`
-- `src/app/pairing.py`
-- `tests/test_app_sessions_m2.py`
+- `src/ai_user/run.py` (new)
+- `src/ai_user/__init__.py` (minimal export if needed)
 
 ### Work items
-1. Reproduce failing M2 tests (`uv run pytest tests/test_app_sessions_m2.py -q`) and group failures into two buckets already identified in todos: `TemplateResponse` TypeError and detached-instance access.
-2. Standardize template rendering calls in `src/app/main.py` to the Starlette/Jinja API shape expected by the pinned dependency version (consistent argument ordering and context object shape across all routes/helpers).
-3. Keep response semantics unchanged: status codes, redirects, and template names remain stable so existing tests stay valid.
-4. Add/adjust only minimal assertions in M2 tests if required for dependency-version-compatible behavior (avoid rewriting test intent).
+1. Implement `argparse` CLI with required `--pairs` and `--model`, plus `--temperature` (default `0.0`) and optional `--seed`.
+2. Validate inputs (`pairs >= 1`, non-empty model string, non-negative temperature) and use stable `SystemExit` error messages for invalid input.
+3. Bootstrap runtime with `ensure_runtime_directories()` and `create_schema()` to match existing CLI patterns.
+4. Emit a concise completion line containing session/run identifiers for operator visibility.
 
-### Definition of done for this step
-- No `TemplateResponse` cache-key/unhashable-dict errors in M2 test run.
+### Definition of done
+- `python -m src.ai_user.run --help` shows expected options.
+- Runner exits cleanly with actionable error tokens/messages for bad args.
 
-## 2) M2 detached-instance safety in pair flow
+## 2) Build deterministic pair selection + AI vote loop
 
 ### Goal
-Ensure route handlers do not rely on ORM attributes after their session context is closed.
+Generate exactly `N` pairwise AI choices using approved cards and description-only prompts.
 
 ### Files in focus
-- `src/app/pairing.py`
-- `src/app/main.py`
+- `src/ai_user/run.py`
+- `src/app/pairing.py` (reuse existing deterministic pair logic, no behavior change)
 
 ### Work items
-1. Audit return types from pair-selection helpers to identify ORM instances crossing session boundaries.
-2. Convert pair payloads to detached-safe structures before leaving DB scope (e.g., primitive IDs/fields or lightweight dataclass snapshots).
-3. Update consuming route code to use detached-safe payloads while keeping rendered data unchanged (description/image references only, no official score exposure).
-4. Preserve pair constraints from FR-2 and existing tests: no self-pairs, no immediate duplicate pair keys, approved cards only.
+1. Start one `SessionRecord` with `actor_type="ai"`, `pair_target_count=<pairs>`, and deterministic nickname/tag for traceability.
+2. For each `presented_order in 1..N`, call existing pair-selection logic (seeded by session/presented order) so constraints remain consistent:
+   - approved cards only,
+   - no self-pairs,
+   - no immediate duplicate pair.
+3. Construct description-only comparison prompt payload from `Card.description_text`; do not include image paths or official scores.
+4. Implement a simple, deterministic AI decision adapter for v1 scaffold (placeholder heuristic or stubbed chooser) with clear seam for future model-provider integration.
+5. Persist each vote as `Comparison(session_id, left_card_id, right_card_id, chosen_card_id, presented_order, response_ms=None)`.
+6. Mark `ended_at` when loop completes or when early-stop conditions occur (e.g., not enough approved cards).
 
-### Definition of done for this step
-- No `DetachedInstanceError` in pair-selection tests or route execution paths.
+### Definition of done
+- Exactly `N` comparisons are stored for a successful run.
+- Stored votes reference only cards in each presented pair.
+- Selection/vote flow is reproducible under fixed seed/session context.
 
-## 3) M2 verification loop
+## 3) Persist AI run configuration metadata for auditability
+
+### Goal
+Store AI-run config in durable DB metadata linked to generated votes.
+
+### Files in focus
+- `src/ai_user/run.py`
+- `src/common/models.py` (only if schema extension is required)
+
+### Work items
+1. Persist run metadata as JSON containing at least: `model`, `prompt_style`, `temperature`, `seed`, `pair_count`, selection strategy identifier, and timestamps.
+2. Prefer a minimal, non-breaking storage path first (e.g., existing `ranking_runs.config_json` with algorithm-style marker) if no dedicated AI-run table exists yet.
+3. If schema change is required for clarity, add the smallest additive table/column and keep migration/bootstrap behavior compatible with `create_schema()`.
+4. Include session linkage (`session_id`) in stored metadata so every AI run can be traced to its comparisons.
+
+### Definition of done
+- Queryable persisted metadata exists for each AI run and includes all required config fields.
+- Metadata/session linkage is deterministic and stable across reruns.
+
+## 4) Add focused M4 tests (persistence + actor separation)
+
+### Goal
+Prove M4 behavior without broad test churn.
+
+### Files in focus
+- `tests/test_ai_user_m4.py` (new)
+- Existing test helpers/fixtures (reuse patterns from M2/M3 tests)
+
+### Test cases
+1. Runner creates one AI session with `actor_type="ai"`, correct target count, and `ended_at` set after completion.
+2. Runner stores exactly `pairs` comparisons tied to that AI session.
+3. All stored comparisons have valid chosen-card membership in `{left_card_id, right_card_id}`.
+4. Persisted AI config metadata includes `model`, `prompt_style`, `temperature`, and `seed`.
+5. Actor separation check: human-only ranking input excludes AI comparisons; AI-only ranking input excludes human comparisons (`load_comparisons_for_population`).
+
+### Definition of done
+- `uv run pytest tests/test_ai_user_m4.py -q` passes.
+- Existing ranking tests still pass for population filtering behavior.
+
+## 5) Verification and todo synchronization
 
 ### Commands
-- `uv run pytest tests/test_app_sessions_m2.py -q`
-
-### Exit criteria
-- All tests in `tests/test_app_sessions_m2.py` pass.
-- Session lifecycle behavior remains compliant (create -> pair -> vote -> complete).
-
-## 4) M3 Bradley-Terry convergence + reproducibility fixes
-
-### Goal
-Make Bradley-Terry pass synthetic-order and same-seed stability tests while preserving existing data-loading/persistence design.
-
-### Files in focus
-- `src/ranking/bradley_terry.py`
-- `src/ranking/service.py`
-- `src/ranking/run.py`
-- `tests/test_ranking_m3.py`
-
-### Work items
-1. Reproduce M3 failures (`uv run pytest tests/test_ranking_m3.py -q`) and confirm current failure mode (`bradley_terry_convergence_failed` and/or order mismatch).
-2. Correct outcome-matrix/event interpretation logic so each comparison consistently models "chosen card is worse" across left/right orientation.
-3. Improve numerical stability/convergence behavior for sparse small synthetic sets (bounded initialization, safe updates, deterministic scaling/normalization each iteration).
-4. Keep deterministic same-seed behavior explicit and persisted in `config_json` metadata (`seed`, convergence status, iterations, tolerance/max-iterations).
-5. Preserve existing invalid-state tokens (`no_approved_cards`, `insufficient_comparisons`, convergence token) and only change them if tests/spec require.
-
-### Definition of done for this step
-- Bradley-Terry synthetic fixture recovers expected order and reports `converged = true` in run metadata.
-- Same-seed repeated runs produce stable ordering and numerically equivalent scores (within test tolerance).
-
-## 5) M3 detached-safe access and persistence sanity
-
-### Goal
-Ensure ranking outputs are accessed in a session-safe way and persisted exactly once per run/card universe.
-
-### Files in focus
-- `src/ranking/service.py`
-- `tests/test_ranking_m3.py`
-
-### Work items
-1. Review any helper that returns ORM rows outside active session contexts; switch to detached-safe data where needed.
-2. Confirm persisted row counts and bounds remain correct for both algorithms:
-   - one `ranking_runs` row per invocation,
-   - one `ranking_results` row per approved card,
-   - normalized score range `[1.0, 100.0]`.
-3. Keep tie/order determinism consistent across repeated runs on fixed input.
-
-### Definition of done for this step
-- No detached-instance failures in ranking tests.
-- Persistence/count/bound assertions continue passing.
-
-## 6) Final verification and checklist updates
-
-### Commands
+- `uv run pytest tests/test_ai_user_m4.py -q`
 - `uv run pytest tests/test_ranking_m3.py -q`
 - `uv run pytest -q`
 
 ### Completion criteria
-- M2 and M3 targeted suites are green.
-- Full test suite is green, or any remaining failure is outside this slice and documented with explicit follow-up todo.
-- Update `todos/initial_implementation.md` statuses for completed M2/M3 stabilization items immediately after verification.
+- New M4 tests are green.
+- Full suite remains green (or any unrelated failures are explicitly documented).
+- Update `todos/initial_implementation.md` to mark completed M4 items and promote next M5 task.

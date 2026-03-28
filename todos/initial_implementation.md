@@ -43,7 +43,4 @@
 
 ## Verification notes (latest run)
 
-- `uv run pytest tests/test_ingest_m1_validation.py -q` -> 5 passed
-- `uv run pytest tests/test_app_sessions_m2.py -q` -> 11 passed
-- `uv run pytest tests/test_ranking_m3.py -q` -> 6 passed
-- `uv run pytest -q` -> 22 passed
+- `uv run pytest -q` -> 24 passed
