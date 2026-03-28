@@ -117,8 +117,8 @@ run_stage() {
     echo "===== ${stage_label} ====="
   fi
 
-#  local cmd=(opencode)
-  local cmd=(opencode -m github-copilot/gpt-5.3-codex)
+  local cmd=(opencode)
+  #local cmd=(opencode -m github-copilot/gpt-5.3-codex)
   if [[ -n "$agent_name" ]]; then
     cmd+=(--agent "$agent_name")
   fi

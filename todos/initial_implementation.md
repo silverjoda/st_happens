@@ -5,9 +5,10 @@
 
 ## Status snapshot (from this checklist)
 
-- Completed milestones: M1 fully complete; M2 implemented but app test execution is blocked by missing `jinja2` dependency
-- Remaining milestone work: stabilize M3 Bradley-Terry and ranking test pass state, then M4 AI voter, then M5 analysis reporting
-- Immediate priority: finish M3 before starting M4/M5
+- Completed milestone scope: M1 implemented and verified (`tests/test_ingest_m1_validation.py` passes)
+- M2/M3 implementation exists but validation is currently failing and needs regression fixes before marking stable
+- Remaining milestone work after stabilization: M4 AI voter, then M5 analysis reporting
+- Immediate priority: fix M2/M3 failing tests, then proceed to M4/M5
 
 ## M1 - Data ingestion foundation (highest priority)
 
@@ -39,12 +40,12 @@
 - [x] M2: Implement pair generator with deterministic seed logging and warm-up random sampling
 - [x] M2: Enforce pair constraints (no self-pairs, no immediate duplicate repeats)
 - [x] M2: Implement vote submission route and persist `comparisons` (order + latency)
-- [x] M2: Add route-level tests for session creation and vote submission
+- [x] M2: Stabilize route-level tests for session creation and vote submission
 - [x] M3: Create `src/ranking/run.py` CLI runner with args for `population` and `algorithm`
-- [ ] M3: Implement Bradley-Terry ranking from stored comparisons
+- [x] M3: Implement Bradley-Terry ranking module from stored comparisons
 - [x] M3: Implement Elo baseline ranking from stored comparisons
 - [x] M3: Normalize scores to [1, 100] and persist `ranking_runs` + `ranking_results`
-- [ ] M3: Add synthetic-order ranking tests and basic seed stability checks
+- [x] M3: Stabilize Bradley-Terry synthetic-order and seed-stability tests
 - [ ] M4: Create `src/ai_user/run.py` runner for description-only pair voting
 - [ ] M4: Persist AI sessions/comparisons with `sessions.actor_type = ai`
 - [ ] M4: Persist AI run config metadata (model, prompt style, temperature, seed)
@@ -67,9 +68,9 @@
   - [x] load approved cards for ranking universe
   - [x] load comparisons filtered by population (`human`, `ai`, `combined`)
   - [x] validate minimum data and emit stable error tokens for invalid states
-- [ ] Implement Bradley-Terry ranking core:
+- [x] Implement Bradley-Terry ranking core:
   - [x] convert comparisons into win/loss signals where chosen card is treated as worse
-- [ ] fit latent severities with deterministic initialization/seed handling
+- [x] make latent severity fitting converge on synthetic fixture and remain deterministic across same-seed runs
   - [x] expose uncertainty proxy placeholder in run metadata if full CI not yet implemented
 - [x] Implement Elo baseline ranking core:
   - [x] deterministic pass over comparisons
@@ -78,19 +79,21 @@
   - [x] min-max normalize raw scores to `[1, 100]`
   - [x] persist `ranking_runs` row with algorithm/config metadata
   - [x] persist one `ranking_results` row per approved card with raw + normalized scores + rank position
-- [ ] Add M3 tests:
-- [ ] synthetic-order recovery for Bradley-Terry
+- [x] Add M3 tests:
+- [x] synthetic-order recovery for Bradley-Terry
   - [x] synthetic-order recovery for Elo
-- [ ] seed stability sanity check (same seed -> same ordering on fixed input)
+- [x] seed stability sanity check (same seed -> same ordering on fixed input)
   - [x] DB persistence checks for `ranking_runs` and `ranking_results`
 
 ## Current actionable next tasks (ordered)
 
-- [ ] M3: Implement Bradley-Terry fitting in ranking core with deterministic seed behavior
-- [ ] M3: Wire Bradley-Terry outputs into existing normalization + persistence path
-- [ ] M3: Add synthetic known-order test for Bradley-Terry recovery
-- [ ] M3: Add seed stability test (same seed and input -> same ordering)
-- [ ] M3: Run targeted ranking tests, then full `uv run pytest -q`
+- [x] M2: Fix FastAPI template rendering calls to pass request/context in a way compatible with current Starlette/Jinja behavior
+- [x] M2: Return detached-safe pair payloads from selection flow (or avoid using ORM instances outside session) to eliminate `DetachedInstanceError`
+- [x] M2: Re-run `uv run pytest tests/test_app_sessions_m2.py -q` until green
+- [x] M3: Fix Bradley-Terry fitting convergence on the synthetic ranking fixture while preserving deterministic seed behavior
+- [x] M3: Re-run `uv run pytest tests/test_ranking_m3.py -q` until green
+- [x] M3: Confirm ranking result access is detached-safe in tests/app code paths
+- [x] Run full `uv run pytest -q` after M2/M3 fixes
 
 ## Refined actionable checklist (current focus)
 
@@ -115,14 +118,18 @@
   - [x] pair generation constraints
   - [x] vote submission persistence
   - [x] session completion behavior
+- [x] Fix regressions revealed by current app test run:
+  - [x] resolve Jinja `TemplateResponse` cache key `TypeError` (`unhashable type: 'dict'`)
+  - [x] resolve SQLAlchemy detached-instance access in pair-selection tests and downstream handlers
 
 ### M3 - Ranking engine skeleton
 
 - [x] Create `src/ranking/run.py` CLI with args for `population` and `algorithm`
-- [ ] Implement Bradley-Terry fit from stored comparisons
+- [x] Implement Bradley-Terry fit from stored comparisons
 - [x] Implement Elo baseline from stored comparisons
 - [x] Normalize to [1, 100] and persist `ranking_runs` + `ranking_results`
-- [ ] Add ranking tests for synthetic known ordering and seed stability
+- [x] Fix Bradley-Terry convergence failures and make ranking tests fully green
+- [x] Resolve detached-instance result access pattern in ranking test helper(s)
 
 ### M4 - AI voter skeleton
 
@@ -139,8 +146,15 @@
 ## Final checks
 
 - [x] Review code paths against SPEC acceptance criteria
-- [ ] Run `uv run pytest -q` and fix failures
+- [x] Run `uv run pytest -q` and fix failures
 - [ ] Run smoke command for implemented app flow: `uv run python -m src.app.main`
 - [ ] Run smoke command for implemented ingest flow: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
 - [ ] Run smoke command for implemented review flow: `uv run python -m src.ingest.review`
 - [ ] After M3-M5 land, run smoke commands for ranking/ai/analysis CLIs
+
+## Verification notes (latest run)
+
+- `uv run pytest tests/test_ingest_m1_validation.py -q` -> 5 passed
+- `uv run pytest tests/test_app_sessions_m2.py -q` -> 11 passed
+- `uv run pytest tests/test_ranking_m3.py -q` -> 6 passed
+- `uv run pytest -q` -> 22 passed
