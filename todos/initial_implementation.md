@@ -64,7 +64,7 @@
 - [x] Execute AI ranking smoke command and record produced run ID
 - [x] Execute AI voter smoke command with concrete model name (e.g., `heuristic_v1`) and record session/run metadata
 - [x] Execute analysis compare command with latest human/AI run IDs and verify `outputs/` artifacts
-- [x] Mark remaining smoke-check items complete in this TODO with command evidence and output paths
+- [ ] Mark remaining smoke-check items complete in this TODO with command evidence and output paths
 
 ## Verification notes (latest run)
 
@@ -109,6 +109,10 @@
 - 2026-03-28 12:01 CET: Ranking smoke rerun (`human` + `ai`) still returns `no_approved_cards`; no run IDs produced because extracted cards are not yet approved.
 - 2026-03-28 12:01 CET: `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1` still returns `insufficient_pairs_available`.
 - 2026-03-28 12:02 CET: `uv run python -m src.analysis.compare --human-run 1 --ai-run 1` returns `ranking_run_not_found:1`; `outputs/` remains empty.
+- 2026-03-28 15:07 CET: Re-audited implementation against this TODO and `SPEC.md`; kept milestone/feature items checked where backed by code/tests, left acceptance-gate work (95% approval) unchecked, and reverted the queue item about "remaining smoke-check items" to unchecked because that gate is still open.
+- 2026-03-28 15:07 CET: `uv run pytest -q` -> `32 passed` (same 4 deprecation warnings: FastAPI `on_event`, `datetime.utcnow()`).
+- 2026-03-28 15:07 CET: `tesseract --version` -> `tesseract 5.5.2` (PATH OK).
+- 2026-03-28 15:07 CET: DB approval snapshot -> `total_cards=200`, `approved_cards=114`, `approval_ratio=57.00%`; 95% acceptance target remains incomplete.
 
 ## Immediate next tasks
 
