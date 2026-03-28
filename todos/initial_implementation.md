@@ -49,7 +49,7 @@
 
 ## Verification notes (latest run)
 
-- `uv run pytest -q` -> 30 passed
+- 2026-03-28: `uv run pytest -q` -> 30 passed (4 deprecation warnings from FastAPI `on_event` and `datetime.utcnow()` usage)
 
 ## Immediate next task
 
