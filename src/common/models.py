@@ -61,6 +61,26 @@ class SessionRecord(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
 
     comparisons: Mapped[list[Comparison]] = relationship(back_populates="session")
+    ai_runs: Mapped[list[AIRunRecord]] = relationship(back_populates="session")
+
+
+class AIRunRecord(Base):
+    __tablename__ = "ai_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_style: Mapped[str] = mapped_column(String(64), nullable=False)
+    temperature: Mapped[float] = mapped_column(Float, nullable=False)
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pair_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    selection_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now()
+    )
+
+    session: Mapped[SessionRecord] = relationship(back_populates="ai_runs")
 
 
 class Comparison(Base):

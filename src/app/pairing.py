@@ -73,6 +73,7 @@ def select_next_pair(
     *,
     session_id: int,
     presented_order: int,
+    selection_seed_base: int | None = None,
 ) -> PairSelection:
     """Select next card pair with warm-up random strategy and repeat guards."""
     cards = load_approved_cards(session)
@@ -83,7 +84,7 @@ def select_next_pair(
         mode = "warmup_random"
     else:
         mode = "warmup_random"
-    seed = session_id
+    seed = session_id if selection_seed_base is None else selection_seed_base
     rng = random.Random(seed + presented_order)
     blocked_pair_key = _last_pair_key(session, session_id)
 
