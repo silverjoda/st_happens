@@ -17,10 +17,19 @@ WARMUP_PAIR_COUNT = 20
 class PairSelection:
     """Selected card pair plus reproducibility metadata."""
 
-    left_card: Card
-    right_card: Card
+    left_card: PairCard
+    right_card: PairCard
     mode: str
     seed: int
+
+
+@dataclass(slots=True)
+class PairCard:
+    """Detached-safe card payload for template rendering."""
+
+    id: int
+    description_text: str | None
+    source_image_path: str
 
 
 def canonical_pair_key(left_card_id: int, right_card_id: int) -> str:
@@ -37,6 +46,14 @@ def load_approved_cards(session: Session) -> list[Card]:
     if len(cards) < 2:
         raise ValueError("not_enough_approved_cards")
     return cards
+
+
+def _to_pair_card(card: Card) -> PairCard:
+    return PairCard(
+        id=card.id,
+        description_text=card.description_text,
+        source_image_path=card.source_image_path,
+    )
 
 
 def _last_pair_key(session: Session, session_id: int) -> str | None:
@@ -105,8 +122,8 @@ def select_next_pair(
         raise ValueError("pair_selection_exhausted")
 
     return PairSelection(
-        left_card=card_lookup[chosen_left],
-        right_card=card_lookup[chosen_right],
+        left_card=_to_pair_card(card_lookup[chosen_left]),
+        right_card=_to_pair_card(card_lookup[chosen_right]),
         mode=mode,
         seed=seed,
     )

@@ -59,9 +59,9 @@ def _render_session_start(
     error: str | None = None,
 ):
     return templates.TemplateResponse(
+        request,
         "session_start.html",
         {
-            "request": request,
             "nickname": nickname,
             "pair_target_count": pair_target_count,
             "error": error,
@@ -190,9 +190,9 @@ async def create_session(request: Request):
 @app.get("/sessions/{session_id}/ready")
 async def session_ready(request: Request, session_id: int):
     return templates.TemplateResponse(
+        request,
         "session_ready.html",
         {
-            "request": request,
             "session_id": session_id,
         },
     )
@@ -225,9 +225,9 @@ async def session_pair(request: Request, session_id: int):
 
     _, pair, presented_order = _current_pair_for_session(session_id)
     return templates.TemplateResponse(
+        request,
         "pair.html",
         {
-            "request": request,
             "session_id": session_id,
             "presented_order": presented_order,
             "left_card": pair.left_card,
@@ -352,9 +352,9 @@ async def session_complete(request: Request, session_id: int):
         return RedirectResponse(url=f"/sessions/{session_id}/pair", status_code=303)
 
     return templates.TemplateResponse(
+        request,
         "complete.html",
         {
-            "request": request,
             "session_id": session_id,
             "vote_count": vote_count,
             "pair_target_count": session_record.pair_target_count,
