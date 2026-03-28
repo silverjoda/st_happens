@@ -68,6 +68,9 @@
 
 ## Verification notes (latest run)
 
+- 2026-03-28 15:36 CET: Failure-mode audit of latest artifacts (`data/processed/ingestion_report_20260328T134613Z.json`, `data/processed/ingestion_log_20260328T134613Z.jsonl`) -> `processed=200`, `success=114`, `failures=86`; failure bucket is `missing_score=86/86 (100.00%)` and `86/200 (43.00%)` overall.
+- 2026-03-28 15:36 CET: Missing-score breakdown by score OCR confidence: `null=39 (45.35%)`, `0.0=3 (3.49%)`, `(0,20)=14 (16.28%)`, `[20,40)=21 (24.42%)`, `>=40=9 (10.47%)`; dominant failure class is score-field OCR no-text/empty extraction.
+- 2026-03-28 15:36 CET: Implemented deterministic score-recovery retry pass (`src/ingest/image.py` + `src/ingest/pipeline.py`) and salvage-first review ordering (`src/ingest/storage.py`, `src/ingest/review.py`); added targeted tests in `tests/test_ingest_m1_validation.py` covering retry score recovery and review-queue prioritization.
 - 2026-03-28 14:50 CET: Audited pre-cleanup inflation state via DB/FS counts: `cards=526`, distinct `source_image_path=200`, status=`approved:185,rejected:341`, raw photos=`200`; top duplicate paths had `count=3`, indicating repeated append-only extraction runs without upsert/dedupe.
 - 2026-03-28 14:50 CET: Chose strategy **B (reset/rebuild)** for reproducibility/low risk. Added reset CLI `uv run python -m src.ingest.reset_dataset` (`src/ingest/reset_dataset.py`) and executed it; snapshot created at `data/reset_snapshots/reset_20260328T134146Z`.
 - 2026-03-28 14:50 CET: Clean extraction rerun -> `Processed=200`, `Successes=66`, `Failures=134`; artifacts: `data/processed/ingestion_report_20260328T134151Z.json`, `.md`, and `ingestion_log_20260328T134151Z.jsonl`; post-run DB invariant check: `cards=200`, distinct paths=`200`, duplicate path groups=`0`.
@@ -119,7 +122,7 @@
 - [ ] Improve ingestion/review quality toward the 95% approved acceptance target (current clean-baseline run: 114/200 approved, 57.00%)
 - [x] Decide whether to de-duplicate/re-baseline the cards dataset before further acceptance validation
 
-## Refined actionable checklist (pending)
+## Refined actionable checklist (completed)
 
 - [x] Audit card-table row inflation and duplicates (526 rows vs 200 source photos) and document root cause
 - [x] Choose dataset strategy for acceptance gating: (A) de-duplicate current DB rows, or (B) reset/rebuild from clean extraction pass
@@ -134,3 +137,12 @@
 
 - Acceptance gate is still blocked: approval ratio is `114/200 = 57.00%` on the clean baseline after one OCR/parser tightening pass and deterministic review.
 - Root cause remains OCR extraction yield (description/score missing for many cards), not duplicate-row inflation.
+
+## Refined actionable checklist (next)
+
+- [x] Audit `data/processed/ingestion_report_*.json` + latest `ingestion_log_*.jsonl` to quantify dominant OCR failure modes by field (`description`, `score`) and by parsing stage
+- [x] Implement one focused OCR-yield improvement pass in `src/ingest/` (image pre-processing and/or score parsing recovery) with deterministic behavior and targeted unit tests
+- [x] Add/adjust manual-review flow to prioritize salvage of currently rejected cards via edit-and-approve (instead of reject-only) while preserving auditability
+- [ ] Re-run clean baseline (`reset_dataset` -> `run_extract` -> full review) and record updated approval ratio against `>=95%` acceptance target
+- [ ] If still below target, run one additional tighten-and-retry cycle and document exact delta in approval ratio and failure buckets
+- [ ] After acceptance target is met, rerun smoke chain (`ranking` human/ai, `ai_user.run`, `analysis.compare`) and update this TODO with new run IDs/artifact paths

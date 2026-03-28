@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.common.models import Card
@@ -33,8 +33,25 @@ def fetch_review_queue(
     limit: int | None = None,
 ) -> list[int]:
     """Return candidate card IDs for review in deterministic order."""
+    description_missing = or_(
+        Card.description_text.is_(None), func.trim(Card.description_text) == ""
+    )
+    score_missing = Card.official_score.is_(None)
+    salvage_priority = case(
+        (
+            or_(
+                and_(description_missing, Card.official_score.is_not(None)),
+                and_(~description_missing, score_missing),
+            ),
+            0,
+        ),
+        (and_(description_missing, score_missing), 2),
+        else_=1,
+    )
     stmt = (
-        select(Card.id).where(Card.status == status).order_by(Card.created_at.asc(), Card.id.asc())
+        select(Card.id)
+        .where(Card.status == status)
+        .order_by(salvage_priority.asc(), Card.created_at.asc(), Card.id.asc())
     )
     if limit is not None:
         stmt = stmt.limit(limit)

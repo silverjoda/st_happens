@@ -3,12 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 from src.common.db import create_schema, session_scope
 from src.common.models import Card
+from src.ingest.ocr import OCRAdapter
 from src.ingest.parser import parse_official_score
+from src.ingest.pipeline import extract_from_image
 from src.ingest.reporting import build_run_report, find_missing_score_increments
-from src.ingest.storage import persist_card_extraction
-from src.ingest.types import ExtractionResult
+from src.ingest.storage import fetch_review_queue, persist_card_extraction
+from src.ingest.types import ExtractionResult, OCRField
 from src.ranking.selection import get_approved_cards
 
 
@@ -135,3 +139,71 @@ def test_parse_official_score_with_common_ocr_substitutions() -> None:
 
 def test_parse_official_score_with_missing_decimal_recovery() -> None:
     assert parse_official_score("995") == 99.5
+
+
+def test_extract_from_image_retries_score_with_recovery_preprocess(monkeypatch) -> None:
+    class SequencedOCR(OCRAdapter):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def extract_text(self, image: np.ndarray) -> OCRField:
+            self.calls += 1
+            if self.calls == 1:
+                return OCRField(text="desc text", confidence=90.0)
+            if self.calls == 2:
+                return OCRField(text=None, confidence=10.0)
+            return OCRField(text="95", confidence=50.0)
+
+    image = np.zeros((10, 10, 3), dtype=np.uint8)
+    monkeypatch.setattr("src.ingest.pipeline.load_image", lambda _: image)
+    monkeypatch.setattr("src.ingest.pipeline.extract_card_region", lambda x: x)
+    monkeypatch.setattr(
+        "src.ingest.pipeline.split_description_and_score_regions",
+        lambda _: (image, image),
+    )
+    monkeypatch.setattr("src.ingest.pipeline.preprocess_image", lambda x: x)
+    monkeypatch.setattr("src.ingest.pipeline.preprocess_score_recovery", lambda x: x)
+
+    result = extract_from_image(Path("/tmp/card.jpg"), SequencedOCR())
+
+    assert result.description_text == "desc text"
+    assert result.official_score == 95.0
+    assert result.failure_reason is None
+    assert result.ocr_confidence_score == 50.0
+
+
+def test_fetch_review_queue_prioritizes_partial_rows(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    create_schema()
+
+    with session_scope() as session:
+        partial_missing_score = Card(
+            source_image_path="/tmp/partial-score.jpg",
+            description_text="Has description",
+            official_score=None,
+            status="extracted",
+        )
+        complete = Card(
+            source_image_path="/tmp/complete.jpg",
+            description_text="Has description",
+            official_score=10.0,
+            status="extracted",
+        )
+        fully_empty = Card(
+            source_image_path="/tmp/empty.jpg",
+            description_text=None,
+            official_score=None,
+            status="extracted",
+        )
+        session.add_all([complete, fully_empty, partial_missing_score])
+        session.flush()
+
+        expected_partial_id = partial_missing_score.id
+        expected_complete_id = complete.id
+        expected_empty_id = fully_empty.id
+
+    with session_scope() as session:
+        queue = fetch_review_queue(session, status="extracted")
+
+    assert queue.index(expected_partial_id) < queue.index(expected_complete_id)
+    assert queue.index(expected_complete_id) < queue.index(expected_empty_id)

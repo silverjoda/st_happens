@@ -110,6 +110,7 @@ def _print_card_panel(
     print(f"Draft description: {draft.description_text!r}")
     print(f"Draft score: {_format_score(draft.official_score)}")
     print(f"Draft dirty: {draft.dirty}")
+    print("Queue order: salvage-first (partial OCR rows before fully empty rows)")
     print(
         "Commands: next prev jump <id> edit desc edit score save discard approve needs_fix reject open quit"
     )

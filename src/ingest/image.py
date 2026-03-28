@@ -21,3 +21,19 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     processed = cv2.GaussianBlur(gray, (3, 3), 0)
     return processed
+
+
+def preprocess_score_recovery(image: np.ndarray) -> np.ndarray:
+    """Apply deterministic score-focused preprocessing for OCR retry."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    equalized = cv2.equalizeHist(gray)
+    thresholded = cv2.adaptiveThreshold(
+        equalized,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        31,
+        4,
+    )
+    denoised = cv2.medianBlur(thresholded, 3)
+    return cv2.resize(denoised, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)

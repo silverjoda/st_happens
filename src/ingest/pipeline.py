@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.ingest.image import load_image, preprocess_image
+from src.ingest.image import load_image, preprocess_image, preprocess_score_recovery
 from src.ingest.ocr import OCRAdapter
 from src.ingest.parser import clean_description, parse_official_score
 from src.ingest.regions import extract_card_region, split_description_and_score_regions
@@ -36,6 +36,13 @@ def extract_from_image(image_path: Path, ocr: OCRAdapter) -> ExtractionResult:
 
     description_text = clean_description(desc_ocr.text)
     official_score = parse_official_score(score_ocr.text)
+    if official_score is None:
+        score_recovery_processed = preprocess_score_recovery(score_region)
+        recovery_ocr = ocr.extract_text(score_recovery_processed)
+        recovered_score = parse_official_score(recovery_ocr.text)
+        if recovered_score is not None:
+            official_score = recovered_score
+            score_ocr = recovery_ocr
 
     failure_reason = None
     if not description_text and official_score is None:
