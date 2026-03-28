@@ -1,186 +1,129 @@
 initial_implementation
 
-# Implementation plan: M1 next pending todo items
+# Implementation plan: next pending M2 app foundation tasks
 
-## Scope for this plan
+## Scope (tight to next unchecked todo slice)
 
-This plan covers the next pending M1 tasks in order and keeps scope limited to ingestion foundation setup:
+This plan targets the immediate pending items in `todos/initial_implementation.md` under **Immediate next task slice (M2)**:
 
-1. Create project package structure under `src/` with modules for ingest, app, ranking, ai_user, analysis.
-2. Implement shared SQLite/SQLAlchemy setup and models (`cards`, `sessions`, `comparisons`, `ranking_runs`, `ranking_results`).
-3. Implement ingestion CLI: `python -m src.ingest.run_extract --input ... --out ...`.
-4. Add extraction pipeline skeleton (image loading, card region handling hooks, OCR calls, confidence capture).
-5. Persist extraction outputs to DB and `data/processed/` artifacts.
-6. Generate digitization report with success/failure counts, confidence summary, and missing 0.5 increments.
+1. Create `src/app/main.py` with FastAPI app initialization and local run entrypoint.
+2. Add template wiring and base page layout for the voting flow.
+3. Add session start page route + form (nickname optional, pair count input).
+4. Add POST handler to create `sessions` rows for `actor_type = human`.
+5. Add route tests for session start/create basics.
 
-Out of scope for this pass: manual review UI/CLI flow, ranking execution, voting app, AI voter, comparative analytics.
+Out of scope for this slice: pair generation logic, voting route, comparison persistence, ranking, AI voter, and analysis.
 
-## Guardrails from SPEC.md and prompt
+## Alignment constraints from SPEC + prompt
 
-- Use Python 3.11+, `uv`, and `pyproject.toml` workflows.
-- Use FastAPI + SQLAlchemy + SQLite as approved defaults (even if FastAPI routes are not implemented yet).
-- Design ingestion for noisy OCR and mandatory manual correction downstream.
-- Keep implementation pragmatic and maintainable; avoid over-hardening and unnecessary abstractions.
-- Persist enough metadata for auditability and reproducibility (timestamps, extraction confidence, run-level report artifacts).
+- Follow approved stack: Python 3.11+, FastAPI templates, SQLite via SQLAlchemy, `uv run` commands.
+- Keep first iteration pragmatic: clean structure, minimal complexity, no unnecessary hardening.
+- Match FR-2 session behavior now (anonymous or nickname, configurable pair count, persistent session records).
+- Preserve auditability (persist `pair_target_count`, timestamps, and actor type consistently).
+- Keep architecture modular so M2 pair flow can plug in without rework.
 
-## Implementation details
+## Work plan
 
-### 1) Package skeleton and shared conventions
-
-### Deliverables
-- `src/` package tree with `__init__.py` files for:
-  - `src/ingest/`
-  - `src/app/`
-  - `src/ranking/`
-  - `src/ai_user/`
-  - `src/analysis/`
-- Shared infra package for persistence/config (e.g., `src/common/` or `src/db/`) used by ingestion and future modules.
-- Runtime data dirs created when needed: `data/processed/` and `outputs/`.
-
-### Steps
-1. Create minimal module layout with clear boundaries and no placeholder bloat.
-2. Add a single source of truth for DB path/configuration (env override + sane local default).
-3. Define a small utility layer for timestamps/session creation helpers reused by CLI scripts.
-
-### Acceptance criteria
-- Running Python module imports for all top-level packages works.
-- Directory structure matches SPEC section 7 conventions.
-
-### 2) SQLite + SQLAlchemy foundation and models
+## 1) FastAPI app entrypoint (`src/app/main.py`)
 
 ### Deliverables
-- SQLAlchemy engine/session factory.
-- Declarative models for:
-  - `cards`
-  - `sessions`
-  - `comparisons`
-  - `ranking_runs`
-  - `ranking_results`
-- Table creation entrypoint for local bootstrap.
+- App factory or module-level `FastAPI` instance.
+- Local run entrypoint compatible with `uv run python -m src.app.main`.
+- Basic router registration for start/create session endpoints.
 
 ### Steps
-1. Implement `Base` + model classes with typed columns mapped directly to SPEC section 8.
-2. Include key constraints and relationships needed for integrity:
-   - FK links from comparisons and ranking results.
-   - Non-null and enum-like text constraints for statuses/populations where practical in SQLite.
-3. Add `created_at` / `updated_at` defaults and update behavior.
-4. Add a bootstrap function invoked by ingestion CLI to ensure schema exists before writes.
+1. Create `src/app/main.py` with `FastAPI(...)` app metadata (`title`, version placeholder).
+2. Wire Jinja2 template directory (`src/app/templates` or existing project convention).
+3. Add root route redirect to session start route (or render start directly).
+4. Add `if __name__ == "__main__"` block using `uvicorn.run("src.app.main:app", ...)` for local development.
 
-### Acceptance criteria
-- Fresh local run creates all required tables in SQLite.
-- Basic insert/read cycle succeeds for a card and extraction metadata fields.
+### Acceptance checks
+- `uv run python -m src.app.main` starts server without import/runtime errors.
+- `GET /` reaches session start UX path.
 
-### 3) Ingestion CLI entrypoint
+## 2) Template wiring and base voting layout
 
 ### Deliverables
-- `src/ingest/run_extract.py` supporting:
-  - `--input` (raw photos dir)
-  - `--out` (processed artifacts dir)
-  - optional `--limit` and `--seed` for deterministic development runs
-- CLI execution via `python -m src.ingest.run_extract ...`.
+- Shared base template (minimal but reusable for upcoming pair UI).
+- Session start template extending base.
 
 ### Steps
-1. Parse args, validate paths, and create output directories.
-2. Initialize DB/session and ingestion run context.
-3. Enumerate image files deterministically (sorted order; optional seed only for sampling when limit is set).
-4. Process each image through extraction skeleton and persist results.
-5. Emit run report JSON/Markdown into `data/processed/`.
+1. Add `base.html` with app title, content block, and area for validation/error messages.
+2. Add `session_start.html` with:
+   - optional `nickname` field,
+   - `pair_target_count` numeric input,
+   - submit action to session creation endpoint.
+3. Keep layout intentionally simple and maintainable; avoid speculative components not needed by current todo items.
 
-### Acceptance criteria
-- CLI runs end-to-end over a small sample without crashing.
-- Each processed image results in either a persisted card record or a tracked failure reason.
+### Acceptance checks
+- Template renders without missing-block or path errors.
+- Form fields map exactly to backend handler payload keys.
 
-### 4) Extraction pipeline skeleton (not full OCR tuning)
+## 3) Session start GET route + form behavior
 
 ### Deliverables
-- Ingestion pipeline modules with clear seams:
-  - image loader/preprocessor (OpenCV)
-  - card-region hook (stubbed strategy with fallback to full image)
-  - OCR adapter interface
-  - Tesseract-first implementation with EasyOCR fallback hook
-  - parser for description text and official score extraction
-- Structured extraction result object with confidence fields.
+- Route that displays start form with sensible default pair count.
 
 ### Steps
-1. Implement image read/validation and basic preprocessing (grayscale/threshold hooks).
-2. Add region extraction interface with default full-frame behavior; leave advanced alignment as follow-up.
-3. Implement OCR adapter returning raw text + confidence (or `None` when unavailable).
-4. Parse numeric score robustly (support integer/decimal, normalize to 0.5 grid check at reporting stage).
-5. Return per-image result object with:
-   - extracted description
-   - extracted score
-   - confidence metadata
-   - failure reason if extraction incomplete
+1. Add `GET /sessions/start` (or equivalent) returning template response.
+2. Provide default value from config constant (e.g., `DEFAULT_PAIR_TARGET = 20`, aligned with SPEC example).
+3. Add simple server-side rendering for field-level errors when submission is invalid.
 
-### Acceptance criteria
-- Pipeline returns structured result for valid images even when OCR quality is poor.
-- Failure cases are explicit and non-fatal to the full run.
+### Acceptance checks
+- Route returns `200` and includes required fields.
+- Default pair count is visible on first load.
 
-### 5) Persistence + processed artifacts
+## 4) Session creation POST route (human actor)
 
 ### Deliverables
-- DB writes for extracted cards with status default (e.g., `extracted`).
-- Artifact files under `data/processed/`:
-  - per-run extraction report
-  - optional line-delimited raw extraction log for audit/debug
+- Route to insert `sessions` row with `actor_type = human`, optional nickname, selected pair target.
+- Redirect after create (to next step placeholder route or confirmation page).
 
 ### Steps
-1. Define transaction policy (commit per image or small batch; prefer per image for resilience in first iteration).
-2. Persist `source_image_path`, extracted fields, confidence fields, and status.
-3. Capture and persist failures in report output even when DB row is not created.
-4. Write run metadata (start/end time, processed count, errors) for reproducibility.
+1. Add POST endpoint (e.g., `POST /sessions`).
+2. Parse/validate input:
+   - nickname: optional, trim whitespace, store `NULL` when empty,
+   - pair target: integer, positive, bounded by practical max (small guardrail for local UX).
+3. Persist session with required fields from data model: `actor_type`, `nickname`, `pair_target_count`, `started_at`.
+4. Commit transaction and return redirect response.
+5. On validation failure, re-render start form with error message and previous values.
 
-### Acceptance criteria
-- DB reflects extracted rows with required fields populated where available.
-- `data/processed/` contains run artifact(s) with deterministic naming (timestamp/run-id).
+### Acceptance checks
+- Valid POST creates one `sessions` record with expected values.
+- Invalid POST does not create a row and returns form with clear error.
 
-### 6) Digitization report + missing increments check
+## 5) Route tests for session start/create
 
 ### Deliverables
-- Report generator producing:
-  - total images processed
-  - success/failure counts + categorized failure reasons
-  - confidence summaries for description and score
-  - list of records requiring manual review
-  - missing expected score increments from `0.5` to `100.0`
+- Test module covering happy path and basic validation.
 
 ### Steps
-1. Aggregate extraction outputs from current run.
-2. Compute confidence summaries (count/min/median/max for available confidence values).
-3. Build expected increment set (`0.5, 1.0, ... 100.0`) and compare against extracted official scores.
-4. Record missing increments and suspected extraction anomalies in report.
-5. Save machine-readable (`.json`) and human-readable (`.md` or `.txt`) report forms.
+1. Add tests using FastAPI `TestClient` and test database/session fixture.
+2. Test `GET` start route returns `200` and contains form controls.
+3. Test valid `POST`:
+   - returns redirect status,
+   - persists session row,
+   - stores `actor_type = human` and expected `pair_target_count`.
+4. Test invalid `POST` (non-integer/negative/out-of-range count) returns `200` form with error and no DB insert.
+5. Test empty nickname persists as `NULL` and non-empty nickname is trimmed.
 
-### Acceptance criteria
-- Report is generated for every run, including partial-failure runs.
-- Missing increment detection is present and explicit.
+### Acceptance checks
+- `uv run pytest` passes new route tests.
+- Tests are deterministic and independent of existing local DB state.
 
-## Execution order and checkpoints
+## Execution order
 
-1. Package skeleton + DB foundation.
-2. Ingestion CLI wiring.
-3. Extraction skeleton integration.
-4. Persistence + report generation.
-5. Smoke run on a small photo subset; verify DB rows and report contents.
+1. Build `src/app/main.py` and template environment wiring.
+2. Create base + session start templates.
+3. Implement `GET` session start route.
+4. Implement `POST` session creation + validation + redirect.
+5. Add route tests and run targeted pytest.
 
-Checkpoint outputs expected after this plan:
-- Importable code layout under `src/`.
-- SQLite DB with schema created and populated by ingestion runs.
-- Repeatable extraction command producing DB data and digitization report artifacts.
+## Verification commands
 
-## Risks and tight mitigations (within this scope)
+- `uv run python -m src.app.main`
+- `uv run pytest -k "session and app"` (or the specific new test module path)
 
-- OCR confidence may be inconsistent across engines -> store nullable confidence fields and normalize later only for reporting.
-- Card localization may be unreliable initially -> keep region hook pluggable, default to full-image OCR to avoid blocking.
-- Score parsing noise -> strict numeric parser + failure classification + missing-increment report to force manual review visibility.
+## Done definition for this planning slice
 
-## Done definition for these next items
-
-These todo items are complete when a developer can run:
-
-`python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
-
-and obtain:
-- populated `cards` rows with extraction metadata,
-- a saved per-run digitization report including missing 0.5 increment analysis,
-- clear failure accounting without aborting the full ingestion run.
+This slice is complete when a user can open the FastAPI app, start a human session via form submission, and have the session stored in SQLite with validated `pair_target_count`; route tests confirm GET/POST behavior and basic input handling.

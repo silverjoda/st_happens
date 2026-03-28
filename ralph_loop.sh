@@ -107,9 +107,15 @@ run_stage() {
   local stage_instruction="$2"
   local continue_mode="$3"
   local agent_name="${4:-}"
+  local current_loop="${5:-}"
+  local max_loops="${6:-}"
 
   echo
-  echo "===== ${stage_label} ====="
+  if [[ -n "$current_loop" && -n "$max_loops" ]]; then
+    echo "===== Loop ${current_loop}/${max_loops} | ${stage_label} ====="
+  else
+    echo "===== ${stage_label} ====="
+  fi
 
 #  local cmd=(opencode)
   local cmd=(opencode -m github-copilot/gpt-5.3-codex)
@@ -138,32 +144,50 @@ while (( loop <= MAX_LOOPS )); do
   run_stage \
     "Stage 1/6 - Read Spec" \
     "Read ${SPEC_FILE} and ${PROMPT_FILE} fully, then internalize all constraints before doing any implementation work." \
-    "no"
+    "no" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   run_stage \
     "Stage 2/6 - Todo State" \
     "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${TODO_FILE}. Determine completed vs pending items and identify the next task(s). If needed, refine this todo file into actionable checklist items and preserve completed items." \
-    "yes" 
+    "yes" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   run_stage \
     "Stage 3/6 - Plan Current Work" \
     "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${TODO_FILE}. Create a detailed implementation plan for the next pending todo item(s), then write it to ${PLAN_FILE}. Prefix the plan file with ${PROMPT_NAME} and keep scope tight and aligned with both spec and prompt." \
-    "no" 
+    "no" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   run_stage \
     "Stage 4/6 - Build" \
     "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${PLAN_FILE}. Implement the plan from ${PLAN_FILE} for current pending todo item(s). Update files in this repository and keep changes minimal and aligned with spec and prompt." \
-    "no"
+    "no" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   run_stage \
     "Stage 5/6 - Review and Test" \
     "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${TODO_FILE}. Review the implementation against ${TODO_FILE}, run relevant tests, then update ${TODO_FILE} by checking only truly completed items and leaving incomplete items unchecked." \
-    "no"
+    "no" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   run_stage \
     "Stage 6/6 - Commit and Push" \
     "Check git status, commit all relevant changes with a clear message for ${PROMPT_NAME}, and push to the current branch. If there is nothing to commit, state that clearly and continue." \
-    "no"
+    "no" \
+    "" \
+    "$loop" \
+    "$MAX_LOOPS"
 
   if ! has_open_todos; then
     echo

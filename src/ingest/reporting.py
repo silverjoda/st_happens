@@ -32,6 +32,11 @@ def _normalized_half_step(score: float) -> float:
     return round(score * 2) / 2
 
 
+def find_missing_score_increments(scores: set[float]) -> list[float]:
+    """Return sorted expected 0.5 increments absent from observed scores."""
+    return sorted(_expected_score_increments() - scores)
+
+
 def build_run_report(
     run_id: str,
     started_at: datetime,
@@ -54,8 +59,7 @@ def build_run_report(
         for result in successes
         if result.official_score is not None
     }
-    expected_scores = _expected_score_increments()
-    missing_increments = sorted(expected_scores - observed_scores)
+    missing_increments = find_missing_score_increments(observed_scores)
 
     report: dict[str, object] = {
         "run_id": run_id,

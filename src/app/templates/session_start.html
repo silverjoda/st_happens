@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Start Session - Ship Happens{% endblock %}
+
+{% block content %}
+  <p>Start a human voting session. Leave nickname blank to stay anonymous.</p>
+  <form method="post" action="/sessions">
+    <label for="nickname">
+      Nickname (optional)
+      <input id="nickname" name="nickname" type="text" value="{{ nickname }}">
+    </label>
+
+    <label for="pair_target_count">
+      Pair target count
+      <input
+        id="pair_target_count"
+        name="pair_target_count"
+        type="number"
+        min="1"
+        max="500"
+        step="1"
+        value="{{ pair_target_count }}"
+        required
+      >
+    </label>
+
+    <button type="submit">Start Session</button>
+  </form>
+{% endblock %}

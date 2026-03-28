@@ -13,7 +13,10 @@ from src.common.db import Base
 class Card(Base):
     __tablename__ = "cards"
     __table_args__ = (
-        CheckConstraint("status IN ('extracted', 'reviewed', 'approved')", name="ck_cards_status"),
+        CheckConstraint(
+            "status IN ('extracted', 'reviewed', 'approved', 'needs_fix', 'rejected')",
+            name="ck_cards_status",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
