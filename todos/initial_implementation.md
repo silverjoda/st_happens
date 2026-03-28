@@ -59,6 +59,9 @@
 
 ## Verification notes (latest run)
 
+- 2026-03-28: Re-reviewed implementation against `SPEC.md` + this TODO; checked items remain accurate, blocked smoke items remain unchecked.
+- 2026-03-28: `uv run pytest -q` -> 30 passed (4 deprecation warnings from FastAPI `on_event` and `datetime.utcnow()` usage).
+- 2026-03-28: `uv run python -m src.app.main` reached uvicorn serving state (pass; stopped by smoke-check timeout).
 - 2026-03-28: `uv run pytest -q` -> 30 passed (4 deprecation warnings from FastAPI `on_event` and `datetime.utcnow()` usage)
 - 2026-03-28 11:52 CET: `uv sync --dev` removed `jinja2`/`python-multipart`; `uv run python -m src.app.main` failed with `ImportError: jinja2 must be installed to use Jinja2Templates`.
 - 2026-03-28 11:52 CET: Added runtime deps in `pyproject.toml` (`jinja2`, `python-multipart`), re-ran `uv sync --dev`, then `uv run python -m src.app.main` reached uvicorn serving state (pass; stopped by smoke-check timeout).

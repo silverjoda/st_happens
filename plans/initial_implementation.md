@@ -1,150 +1,180 @@
 initial_implementation
 
-# Implementation plan: next pending todo items (M5 comparative analysis)
+# Implementation plan: next pending todo items (final smoke checks)
 
 ## Scope (tight to immediate pending work)
 
-This plan targets the next unchecked items in `todos/initial_implementation.md`, centered on M5 only:
+This plan targets only the next unchecked items in `todos/initial_implementation.md`:
 
-1. Create `src/analysis/compare.py` CLI with `--human-run` and `--ai-run` validation.
-2. Load ranking runs and align them to approved cards + official scores.
-3. Compute required metrics (Spearman, Kendall tau, MAD on normalized 1-100).
-4. Generate top-disagreement lists for official vs human and official vs AI.
-5. Write machine-readable and readable report artifacts to `outputs/`.
-6. Add focused tests for metric correctness and output artifact shape/path.
+1. App startup smoke check.
+2. Ingestion extraction smoke check and report verification.
+3. Manual review CLI smoke check.
+4. Human and AI ranking smoke checks with run-id capture.
+5. AI voter smoke check.
+6. Analysis compare smoke check and output verification.
+7. Verification-note and todo updates.
 
-Out of scope for this pass: app/ingest smoke commands and broad non-M5 refactors.
+Out of scope: new feature development, refactors, and broad test rewrites.
 
 ## Spec + prompt alignment
 
-- FR-7 requires official vs human vs AI comparison outputs with Spearman, Kendall tau, MAD, and disagreement cards.
-- FR-5/Section 12 require normalized 1-100 comparisons; preserve precision and avoid accidental re-scaling mismatches.
-- FR-4/NFR transparency require run-linked, reproducible artifacts with explicit metadata.
-- Section 11 command surface requires `uv run python -m src.analysis.compare --human-run <id> --ai-run <id>`.
-- Prompt guidance favors pragmatic, maintainable first-iteration design: minimal moving parts, clear helpers, deterministic outputs.
+- Section 11 requires each CLI/app command to run from repo root using `uv run ...`.
+- FR-1/FR-1a require extraction artifacts and manual review loop to be operational.
+- FR-5 requires ranking CLI execution for both populations.
+- FR-6 requires AI voter execution as `actor_type = ai`.
+- FR-7 requires compare report generation with required metrics/disagreement outputs in `outputs/`.
+- Prompt requires pragmatic first-iteration validation: verify critical paths end-to-end without adding unnecessary complexity.
 
 ## Detailed implementation plan
 
-## 1) Scaffold compare CLI and input validation
+## 1) Preflight and logging setup
 
 ### Goal
-Add a reliable analysis entrypoint that fails fast on invalid run references or population mismatches.
+Establish a repeatable smoke-check workflow and capture results in one place.
 
 ### Files in focus
-- `src/analysis/compare.py` (new)
-- `src/analysis/__init__.py` (only if export wiring is needed)
+- `todos/initial_implementation.md`
 
 ### Work items
-1. Implement `argparse` with required `--human-run` and `--ai-run` integer arguments.
-2. Add optional output controls only if already consistent with repository patterns (e.g., output dir defaulting to `outputs/`).
-3. Validate run existence from `ranking_runs` and assert population compatibility (`human` for `--human-run`, `ai` for `--ai-run`).
-4. Surface clear `SystemExit` messages for bad IDs, wrong populations, or missing ranking results.
-5. Reuse existing runtime bootstrap utilities (`ensure_runtime_directories()`, schema init) rather than introducing new startup pathways.
+1. Confirm dependencies are synced (`uv sync --dev` if needed).
+2. Use a single execution order that mirrors runtime dependencies: app -> ingest -> review -> ranking -> AI voter -> analysis.
+3. For each command, capture: timestamp, command, pass/fail, and key outputs (artifact paths or run IDs).
+4. Append concise findings to `## Verification notes (latest run)` after each command.
 
 ### Definition of done
-- `uv run python -m src.analysis.compare --help` exposes expected CLI surface.
-- Invalid run inputs fail with deterministic, actionable messages.
+- Verification-note format is consistent and ready for final summary.
 
-## 2) Implement data-loading and alignment helpers
+## 2) App startup smoke check
 
 ### Goal
-Build one canonical in-memory comparison table keyed by card, containing official, human, and AI normalized values.
+Verify FastAPI entrypoint imports and boots without immediate runtime errors.
 
-### Files in focus
-- `src/analysis/compare.py`
-- Existing DB models/helpers under `src/common/` (reuse only)
+### Command
+`uv run python -m src.app.main`
 
 ### Work items
-1. Load approved cards (`cards.status = approved`) with `official_score` and `description_text`.
-2. Load ranking results for the selected human and AI run IDs.
-3. Join by `card_id` and enforce intersection semantics so each compared card has all required values.
-4. Add explicit alignment checks and warnings/errors for:
-   - cards missing in either ranking run,
-   - non-approved cards leaking into ranking outputs,
-   - empty overlap set.
-5. Normalize representation in a typed internal structure (dataclass/dict rows) to keep metric and report generation simple.
+1. Run command from repo root.
+2. Confirm startup log appears and process reaches serving state.
+3. Treat immediate import/config exceptions as failure; record traceback headline.
+4. Stop process cleanly after successful startup confirmation.
 
 ### Definition of done
-- A single aligned dataset is produced deterministically from the two run IDs.
-- Fail-fast behavior is in place for unusable or inconsistent input data.
+- Todo item "Execute app startup smoke check and capture pass/fail result" is checkable.
 
-## 3) Implement required metrics and disagreement extraction
+## 3) Ingestion extraction smoke check + artifact verification
 
 ### Goal
-Compute all FR-7 metrics from aligned data with predictable formulas and edge-case handling.
+Verify extraction command executes and emits processed artifacts including digitization report.
 
-### Files in focus
-- `src/analysis/compare.py`
-- `pyproject.toml` (only if a missing statistical dependency must be added)
+### Command
+`uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
 
 ### Work items
-1. Compute Spearman rank correlation for:
-   - official vs human,
-   - official vs AI,
-   - human vs AI (supporting metric, useful for interpretation).
-2. Compute Kendall tau for the same pairs.
-3. Compute mean absolute difference on normalized 1-100 scores for official vs human and official vs AI.
-4. Extract top disagreement cards by absolute score delta (and optionally rank delta as tie-breaker), separately for official-human and official-AI.
-5. Handle small-sample/tie edge cases gracefully (return `None` or `nan` with explicit serialization policy).
+1. Run extraction command and capture high-level processing summary.
+2. Verify output files exist under `data/processed/`.
+3. Explicitly locate the digitization report artifact and record its path.
+4. If extraction fails due to data/environment preconditions, record exact blocker and continue remaining non-blocked checks where possible.
 
 ### Definition of done
-- Metric outputs match expected values on deterministic test fixtures.
-- Disagreement lists are stable in ordering under ties.
+- Todo items for extraction smoke check and report-path confirmation are checkable.
 
-## 4) Generate report artifacts under outputs/
+## 4) Manual review CLI smoke check
 
 ### Goal
-Emit one machine-readable artifact plus one readable summary, both traceable to the selected run IDs.
+Confirm review flow starts and reaches interactive card-review entrypoint.
 
-### Files in focus
-- `src/analysis/compare.py`
-- `outputs/` (runtime artifacts)
+### Command
+`uv run python -m src.ingest.review`
 
 ### Work items
-1. Write JSON artifact containing:
-   - run metadata (`human_run_id`, `ai_run_id`, timestamps),
-   - card count used,
-   - metric values,
-   - top-disagreement card payloads.
-2. Write a companion readable text/markdown summary with the same headline metrics and top disagreements.
-3. Use deterministic filenames including run IDs (example: `comparison_h{human}_a{ai}.json` and `.md`).
-4. Ensure directories exist and paths are printed to stdout for operator visibility.
+1. Run command and verify interactive loop/menu initializes.
+2. Confirm no immediate crash on startup or first prompt render.
+3. Exit gracefully after startup verification; record whether at least one review prompt rendered.
 
 ### Definition of done
-- Two artifacts are produced in `outputs/` for each successful run.
-- Artifacts are easy to diff and replay across reruns.
+- Todo item for manual-review CLI interactive entry is checkable.
 
-## 5) Add focused tests for M5 behavior
+## 5) Ranking smoke checks (human + AI)
 
 ### Goal
-Cover core correctness and output contract without broad suite churn.
+Verify ranking CLIs run for both populations and produce run IDs for downstream compare.
 
-### Files in focus
-- `tests/test_analysis_compare_m5.py` (new)
-- Existing fixtures/helpers reused from current test suite
+### Commands
+- `uv run python -m src.ranking.run --population human --algorithm bradley_terry`
+- `uv run python -m src.ranking.run --population ai --algorithm bradley_terry`
 
-### Test cases
-1. CLI rejects nonexistent run IDs and population mismatches.
-2. Alignment helper excludes non-approved/missing cards and errors on empty overlap.
-3. Metric helper returns expected Spearman/Kendall/MAD values on a known synthetic dataset.
-4. Disagreement extraction returns deterministic top-N ordering.
-5. Successful CLI execution writes both JSON and readable summary files to expected `outputs/` paths and includes required keys/fields.
+### Work items
+1. Run human ranking command and capture resulting `ranking_run.id` (or equivalent emitted identifier).
+2. Run AI ranking command and capture resulting run ID.
+3. Record normalization/output summary if printed (card count, score range, artifact hints).
+4. Add both IDs to verification notes for direct reuse in compare step.
 
 ### Definition of done
-- `uv run pytest tests/test_analysis_compare_m5.py -q` passes.
-- `uv run pytest -q` remains green after M5 changes.
+- Todo item for human+AI ranking execution and run-id recording is checkable.
 
-## 6) Execution order and completion checklist
+## 6) AI voter smoke check
 
-1. Implement CLI scaffold + validation.
-2. Implement aligned data loading helpers.
-3. Implement metrics + disagreement helpers.
-4. Implement artifact writers.
-5. Add M5 tests and fix any regressions.
-6. Run full test suite and update `todos/initial_implementation.md` to mark completed M5 items.
+### Goal
+Verify AI pairwise voting runner executes its main loop with description-only inputs.
+
+### Command
+`uv run python -m src.ai_user.run --pairs 200 --model <model_name>`
+
+### Work items
+1. Choose a locally configured model value consistent with current project setup.
+2. Run command and verify session creation plus at least initial voting progression.
+3. Capture resulting AI session/run metadata identifiers if emitted.
+4. If external model credentials are missing, record blocker explicitly and mark as environment-blocked (not code-failed).
+
+### Definition of done
+- Todo item for AI voter smoke execution is checkable (pass or clearly blocked with reason).
+
+## 7) Analysis compare smoke check + output verification
+
+### Goal
+Run final comparison and verify required output artifacts are produced under `outputs/`.
+
+### Command
+`uv run python -m src.analysis.compare --human-run <id> --ai-run <id>`
+
+### Work items
+1. Run command using latest valid human/AI run IDs from step 5.
+2. Confirm command completes and emits output file paths.
+3. Verify `outputs/` contains machine-readable and readable summary artifacts.
+4. Confirm artifacts include required metrics and disagreement lists (FR-7 contract-level check).
+
+### Definition of done
+- Todo items for analysis smoke execution and output verification are checkable.
+
+## 8) Closeout updates
+
+### Goal
+Synchronize todo state and leave an auditable record of what passed/failed.
+
+### Files in focus
+- `todos/initial_implementation.md`
+
+### Work items
+1. Mark each completed smoke-check todo as checked.
+2. For any failures, keep todo unchecked and add one-line remediation note in verification notes.
+3. Ensure `## Immediate next task` reflects the first remaining unchecked item (or mark complete if none remain).
+
+### Definition of done
+- Todo file accurately reflects current state, with no ambiguity on remaining blockers.
+
+## Execution order (strict)
+
+1. Preflight logging setup.
+2. App startup smoke check.
+3. Ingestion extraction + artifact verification.
+4. Manual review smoke check.
+5. Human and AI ranking smoke checks.
+6. AI voter smoke check.
+7. Analysis compare smoke check.
+8. Todo and verification-note closeout.
 
 Completion criteria for this plan:
 
-- All unchecked M5 implementation items in `todos/initial_implementation.md` are done.
-- Tests covering M5 pass locally.
-- Project is ready for final smoke checks listed in todo file.
+- Every currently pending smoke-check todo has a recorded result (pass/fail/blocked).
+- Required report/artifact paths are documented for `data/processed/` and `outputs/`.
+- Latest run IDs needed for comparison are captured in `todos/initial_implementation.md` verification notes.
