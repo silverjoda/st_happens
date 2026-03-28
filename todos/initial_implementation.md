@@ -130,7 +130,7 @@
 - [x] Re-run extraction and complete manual review on the clean card set
 - [x] Recompute approval ratio against the acceptance criterion (>=95% approved cards)
 - [x] If approval ratio is still below target, tighten OCR/review workflow (confidence triage + correction loop) and repeat
-- [x] Re-run ranking + AI voter + compare smoke commands on the accepted dataset and confirm fresh artifacts in `outputs/`
+- [ ] Re-run ranking + AI voter + compare smoke commands on the accepted dataset and confirm fresh artifacts in `outputs/`
 - [x] Update this TODO with command evidence (run IDs, output paths, and final acceptance status)
 
 ### Pending blocker after cleanup/rebuild
