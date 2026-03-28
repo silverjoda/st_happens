@@ -33,7 +33,12 @@ def _get_session_local() -> sessionmaker[Session]:
     if _engine is None or _session_local is None or _engine_url != url:
         _engine = create_engine(url, future=True)
         _session_local = sessionmaker(
-            bind=_engine, autocommit=False, autoflush=False, class_=Session, future=True
+            bind=_engine,
+            autocommit=False,
+            autoflush=False,
+            expire_on_commit=False,
+            class_=Session,
+            future=True,
         )
         _engine_url = url
 
