@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
-from src.common.models import Card
+from src.common.settings import get_display_cards_dir
 
 WARMUP_PAIR_COUNT = 20
 
@@ -38,26 +36,33 @@ def canonical_pair_key(left_card_id: int, right_card_id: int) -> str:
     return f"{low}:{high}"
 
 
-def load_approved_cards(session: Session) -> list[Card]:
-    """Load cards eligible for human voting."""
-    cards = list(
-        session.scalars(select(Card).where(Card.status == "approved").order_by(Card.id)).all()
-    )
+def _display_card_sort_key(path: Path) -> tuple[float, str]:
+    stem = path.stem
+    score_text = stem.removesuffix("_processed")
+    try:
+        numeric_score = float(score_text)
+    except ValueError:
+        return float("inf"), path.name
+    return -numeric_score, path.name
+
+
+def load_approved_cards(session: object | None = None) -> list[PairCard]:
+    """Load cards eligible for human voting from display assets."""
+    del session
+    display_dir = get_display_cards_dir()
+    cards: list[PairCard] = []
+    for index, path in enumerate(
+        sorted(display_dir.glob("*_processed.jpg"), key=_display_card_sort_key), start=1
+    ):
+        cards.append(PairCard(id=index, description_text=None, source_image_path=str(path)))
+
     if len(cards) < 2:
         raise ValueError("not_enough_approved_cards")
     return cards
 
 
-def _to_pair_card(card: Card) -> PairCard:
-    return PairCard(
-        id=card.id,
-        description_text=card.description_text,
-        source_image_path=card.source_image_path,
-    )
-
-
 def select_next_pair(
-    session: Session,
+    session: object | None = None,
     *,
     session_id: int,
     presented_order: int,
@@ -111,8 +116,8 @@ def select_next_pair(
         raise ValueError("pair_selection_exhausted")
 
     return PairSelection(
-        left_card=_to_pair_card(card_lookup[chosen_left]),
-        right_card=_to_pair_card(card_lookup[chosen_right]),
+        left_card=card_lookup[chosen_left],
+        right_card=card_lookup[chosen_right],
         mode=mode,
         seed=seed,
     )

@@ -126,12 +126,11 @@ Operational guide for coding agents working in this repository.
 - Handle optional dependency failures gracefully (e.g., OCR fallback adapter).
 - Do not silently swallow exceptions unless there is a clear fallback path.
 
-## Database and persistence patterns
+## Persistence patterns
 
-- Use `session_scope()` for transactional DB work.
-- Keep writes inside the context manager and rely on commit/rollback behavior.
-- Call `session.flush()` when IDs are needed before commit.
-- Keep model constraints aligned with `SPEC.md` requirements.
+- Keep writes atomic and deterministic in file-backed artifacts.
+- Preserve stable identifiers and references across generated files.
+- Keep persisted record shapes aligned with `SPEC.md` requirements.
 
 ## FastAPI patterns
 
@@ -142,14 +141,14 @@ Operational guide for coding agents working in this repository.
 ## Testing patterns
 
 - Use `pytest`.
-- Use `tmp_path` for isolated filesystem/database cases.
-- Use `monkeypatch` for env vars such as `SHIP_HAPPENS_DB_URL`.
+- Use `tmp_path` for isolated filesystem cases.
+- Use `monkeypatch` for env vars controlling runtime paths.
 - Keep tests deterministic and independent.
 - Prefer behavior assertions over implementation-detail assertions.
 
 ## Data and outputs
 
-- Runtime DB default is under `data/ship_happens.db` unless overridden by env.
+- Runtime card image source is `data/processed/display_cards/`.
 - Processed ingestion artifacts go to `data/processed/`.
 - Analysis/report outputs go to `outputs/`.
 - Treat `outputs/ocr_test_claude_results.json` as a locked manual-correction baseline; its description and score fields are authoritative and must not be edited.

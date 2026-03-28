@@ -12,8 +12,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCORE_RAW_RE = re.compile(r"^(\d{1,3}(?:\.5)?)_raw$")
 
 
-def get_database_url() -> str:
-    """Return the configured SQLite database URL."""
+def get_storage_url() -> str:
+    """Return the configured local storage URL."""
     configured = os.getenv("SHIP_HAPPENS_DB_URL")
     if configured:
         return configured

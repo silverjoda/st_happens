@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from src.app.pairing import PairSelection, select_next_pair
+from src.app.pairing import PairSelection, load_approved_cards, select_next_pair
 from src.app.session_results import (
     SessionResult,
     append_comparison,
@@ -23,13 +23,7 @@ from src.app.session_results import (
     load_session_result,
     set_session_ended,
 )
-from src.common.db import create_schema, session_scope
-from src.common.models import Card
-from src.common.settings import (
-    display_card_path_for_source,
-    display_card_path_for_score,
-    ensure_runtime_directories,
-)
+from src.common.settings import ensure_runtime_directories
 
 DEFAULT_PAIR_TARGET = 20
 MIN_PAIR_TARGET = 1
@@ -109,18 +103,16 @@ def _current_pair_for_session(session_id: int) -> tuple[SessionResult, PairSelec
         _set_session_ended(session_id)
         raise HTTPException(status_code=409, detail="session_already_completed")
 
-    with session_scope() as session:
-        try:
-            pair = select_next_pair(
-                session,
-                session_id=session_id,
-                presented_order=presented_order,
-                blocked_pair_key=last_pair_key(session_record),
-            )
-        except ValueError as exc:
-            if str(exc) in {"not_enough_approved_cards", "pair_selection_exhausted"}:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            raise
+    try:
+        pair = select_next_pair(
+            session_id=session_id,
+            presented_order=presented_order,
+            blocked_pair_key=last_pair_key(session_record),
+        )
+    except ValueError as exc:
+        if str(exc) in {"not_enough_approved_cards", "pair_selection_exhausted"}:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise
 
     logger.info(
         "pair_selected session_id=%s presented_order=%s mode=%s seed=%s",
@@ -141,7 +133,6 @@ def _load_pair_by_order(session_id: int, presented_order: int) -> tuple[int, int
 def on_startup() -> None:
     ensure_runtime_directories()
     ensure_results_directory()
-    create_schema()
 
 
 @app.get("/")
@@ -192,24 +183,12 @@ async def session_ready(request: Request, session_id: int):
 
 @app.get("/cards/{card_id}/image")
 async def card_image(card_id: int):
-    with session_scope() as session:
-        card = session.get(Card, card_id)
-        if card is None:
-            raise HTTPException(status_code=404, detail="card_not_found")
+    cards = load_approved_cards()
+    card = next((entry for entry in cards if entry.id == card_id), None)
+    if card is None:
+        raise HTTPException(status_code=404, detail="card_not_found")
 
-    candidate_paths = [display_card_path_for_source(card.source_image_path)]
-    if card.official_score is not None:
-        candidate_paths.append(display_card_path_for_score(card.official_score))
-
-    seen_paths: set[Path] = set()
-    for display_path in candidate_paths:
-        if display_path in seen_paths:
-            continue
-        seen_paths.add(display_path)
-        if display_path.exists() and display_path.is_file():
-            return FileResponse(path=display_path)
-
-    raise HTTPException(status_code=404, detail="card_image_not_found")
+    return FileResponse(path=card.source_image_path)
 
 
 @app.get("/sessions/{session_id}/pair")

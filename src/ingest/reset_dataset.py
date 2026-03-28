@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.common.settings import PROJECT_ROOT, get_database_url
+from src.common.settings import PROJECT_ROOT, get_storage_url
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,9 +39,9 @@ def _resolve_path(path_value: str) -> Path:
     return path
 
 
-def _database_file_from_url(url: str) -> Path:
+def _store_file_from_url(url: str) -> Path:
     if not url.startswith("sqlite:///"):
-        raise SystemExit("unsupported_database_url_for_reset")
+        raise SystemExit("unsupported_storage_url_for_reset")
     raw_path = url.removeprefix("sqlite:///")
     return Path(raw_path)
 
@@ -60,7 +60,7 @@ def main() -> None:
     args = parse_args()
     archive_root = _resolve_path(args.archive_root)
     processed_dir = _resolve_path(args.processed_dir)
-    db_path = _database_file_from_url(get_database_url())
+    db_path = _store_file_from_url(get_storage_url())
 
     snapshot_dir: Path | None = None
     if not args.skip_snapshot:
@@ -77,7 +77,7 @@ def main() -> None:
         shutil.rmtree(processed_dir)
     processed_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"database_reset={db_path}")
+    print(f"store_reset={db_path}")
     print(f"processed_dir_reset={processed_dir}")
     print(f"snapshot_dir={snapshot_dir if snapshot_dir is not None else 'none'}")
 

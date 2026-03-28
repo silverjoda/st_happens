@@ -1,4 +1,4 @@
-"""Database models for Ship Happens."""
+"""Persistent models for Ship Happens."""
 
 from __future__ import annotations
 

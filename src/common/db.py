@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-from src.common.settings import get_database_url
+from src.common.settings import get_storage_url
 
 
 Base = declarative_base()
@@ -29,7 +29,7 @@ def _get_engine() -> Engine:
 def _get_session_local() -> sessionmaker[Session]:
     global _engine, _session_local, _engine_url
 
-    url = get_database_url()
+    url = get_storage_url()
     if _engine is None or _session_local is None or _engine_url != url:
         _engine = create_engine(url, future=True)
         _session_local = sessionmaker(

@@ -49,7 +49,7 @@ The core question is: how closely do human and AI rankings align with the offici
 - Language: Python 3.11+
 - Python/package management: `uv` + `pyproject.toml`
 - API/UI backend: FastAPI with server-rendered templates
-- Persistence: SQLite via SQLAlchemy
+- Persistence: local file-backed artifacts (JSON/JSONL)
 - Image processing: OpenCV
 - OCR: Tesseract first, EasyOCR fallback if needed
 - Ranking algorithms:
@@ -59,7 +59,7 @@ The core question is: how closely do human and AI rankings align with the offici
 
 Rationale:
 - This stack minimizes setup complexity while remaining robust and extensible.
-- SQLite is sufficient for expected local volume and supports transparent auditing.
+- File-backed artifacts are sufficient for expected local volume and support transparent auditing.
 - `uv` keeps environment/dependency workflows fast and reproducible for local development.
 
 ## 6) High-Level System Architecture
@@ -112,11 +112,11 @@ Rationale:
 - `data/processed/` - cleaned/extracted card dataset and review files
 - `outputs/` - ranking outputs, charts, and analysis artifacts
 
-## 8) Data Model (SQLite)
+## 8) Data Model (File-Backed Records)
 
 ### cards
 - Note (Phase-1): extraction run output is file-based (`data/processed/*.json` and `*.jsonl`); this table can be populated later via import/review flow.
-- `id` (PK)
+- `id` (stable integer identifier)
 - `source_image_path` (text)
 - `description_text` (text)
 - `official_score` (real)
@@ -126,33 +126,33 @@ Rationale:
 - `created_at`, `updated_at`
 
 ### sessions
-- `id` (PK)
+- `id` (stable integer identifier)
 - `actor_type` (enum/text: `human|ai`)
 - `nickname` (text, nullable)
 - `pair_target_count` (int)
 - `started_at`, `ended_at`
 
 ### comparisons
-- `id` (PK)
-- `session_id` (FK -> sessions)
-- `left_card_id` (FK -> cards)
-- `right_card_id` (FK -> cards)
-- `chosen_card_id` (FK -> cards)
+- `id` (stable integer identifier)
+- `session_id` (reference -> sessions)
+- `left_card_id` (reference -> cards)
+- `right_card_id` (reference -> cards)
+- `chosen_card_id` (reference -> cards)
 - `presented_order` (int)
 - `response_ms` (int, nullable)
 - `created_at`
 
 ### ranking_runs
-- `id` (PK)
+- `id` (stable integer identifier)
 - `population` (enum/text: `human|ai|combined`)
 - `algorithm` (text: `bradley_terry|elo`)
 - `config_json` (text/json)
 - `created_at`
 
 ### ranking_results
-- `id` (PK)
-- `ranking_run_id` (FK -> ranking_runs)
-- `card_id` (FK -> cards)
+- `id` (stable integer identifier)
+- `ranking_run_id` (reference -> ranking_runs)
+- `card_id` (reference -> cards)
 - `raw_score` (real)
 - `normalized_score_1_100` (real)
 - `rank_position` (int)
@@ -271,7 +271,7 @@ Expected commands/scripts (exact filenames may evolve, behavior is required):
 - Convert model latent score to normalized [1, 100] scale:
   - min-max normalization within run,
   - optional display rounding to nearest 0.5,
-  - preserve unrounded value in DB for analysis precision.
+- preserve unrounded value in stored ranking artifacts for analysis precision.
 - Support confidence intervals or uncertainty proxy where possible.
 
 ## 13) Quality Assurance and Validation
@@ -294,7 +294,7 @@ Expected commands/scripts (exact filenames may evolve, behavior is required):
 
 ### End-to-end acceptance criteria
 - At least 95% of cards approved in dataset.
-- Human and AI sessions can be recorded and replayed from DB.
+- Human and AI sessions can be recorded and replayed from stored artifacts.
 - Ranking script outputs normalized scores for all approved cards.
 - Comparison report generated successfully with required metrics.
 - Digitization report is generated and saved for each extraction run.

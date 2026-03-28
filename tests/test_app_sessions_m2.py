@@ -315,8 +315,42 @@ def test_card_image_never_falls_back_to_raw_source(monkeypatch, tmp_path: Path) 
     with TestClient(app) as client:
         response = client.get(f"/cards/{card_id}/image")
 
+    assert response.status_code == 404
+
+
+def test_card_image_prefers_score_asset_over_source_fallback(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "raw-card.jpg"
+    source_path.write_bytes(b"raw")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=88.0,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    source_based_display_path = display_card_path_for_source(source_path)
+    source_based_display_path.parent.mkdir(parents=True, exist_ok=True)
+    source_based_display_path.write_bytes(b"source-based")
+
+    score_based_display_path = display_card_path_for_score(88.0)
+    score_based_display_path.parent.mkdir(parents=True, exist_ok=True)
+    score_based_display_path.write_bytes(b"score-based")
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
     assert response.status_code == 200
-    assert response.content == b"processed"
+    assert response.content == b"score-based"
 
 
 def test_pair_selection_never_self_pairs(monkeypatch, tmp_path: Path) -> None:
