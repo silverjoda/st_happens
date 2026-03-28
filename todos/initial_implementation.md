@@ -20,27 +20,37 @@
 
 ### M5 - Comparative analysis reporting
 
-- [ ] Create `src/analysis/compare.py` CLI for ranking comparisons
-- [ ] Compute/report Spearman, Kendall tau, and mean absolute difference on normalized scores
-- [ ] Output top disagreement cards and write report artifacts to `outputs/`
+- [x] Create `src/analysis/compare.py` with CLI args `--human-run` and `--ai-run`
+- [x] Load ranking runs and join against approved cards + official scores
+- [x] Compute required metrics: Spearman rank correlation, Kendall tau, and mean absolute difference (normalized 1-100)
+- [x] Generate top-disagreement card list for official vs human and official vs AI
+- [x] Write report artifacts to `outputs/` (machine-readable file + readable summary)
+- [x] Add tests for metric computation and output artifact shape/path
 
 ## Final verification and smoke checks
 
 - [x] Review implemented code paths against current SPEC acceptance criteria
 - [x] Run `uv run pytest -q` and fix failures
-- [ ] Run app smoke command: `uv run python -m src.app.main`
-- [ ] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
-- [ ] Run review smoke command: `uv run python -m src.ingest.review`
-- [ ] After M4/M5 land, run ranking/AI/analysis smoke commands end to end
+- [ ] Run app smoke command: `uv run python -m src.app.main` (startup succeeds)
+- [ ] Run ingest smoke command: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed` (run completes + report emitted)
+- [ ] Run review smoke command: `uv run python -m src.ingest.review` (manual review loop starts)
+- [ ] After M5 lands, run ranking/AI/analysis smoke commands end to end
 
 ## Next task queue (ordered, actionable)
 
 - [x] Implement M4 runner scaffold in `src/ai_user/run.py` with CLI args (`--pairs`, `--model`, `--temperature`, optional `--seed`)
 - [x] Add deterministic pair selection + vote loop for AI actor using description-only card data
 - [x] Persist AI session/comparison rows and run metadata, then add focused tests for persistence and actor separation
-- [ ] Implement `src/analysis/compare.py` to load official/human/AI rankings and compute required metrics
-- [ ] Emit analysis outputs (table + disagreement list artifact) to `outputs/` and add tests for metric/report shape
+- [x] Create `src/analysis/compare.py` CLI entrypoint and argument validation
+- [x] Implement ranking/official data loading helpers and shared normalization alignment checks
+- [x] Implement required metric calculations and disagreement extraction
+- [x] Write outputs to `outputs/` and add/adjust tests in `tests/` for M5 coverage
+- [x] Run `uv run pytest -q` and resolve any new failures
 
 ## Verification notes (latest run)
 
-- `uv run pytest -q` -> 24 passed
+- `uv run pytest -q` -> 30 passed
+
+## Immediate next task
+
+- [x] Start M5 by implementing `src/analysis/compare.py` CLI scaffold plus metric computation helpers, then backfill tests
