@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+
+{% block title %}Session Complete - Ship Happens{% endblock %}
+
+{% block content %}
+  <p>Session {{ session_id }} is complete.</p>
+  <p>Recorded votes: {{ vote_count }} / {{ pair_target_count }}</p>
+  <p>Thanks for voting.</p>
+{% endblock %}

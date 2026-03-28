@@ -1,129 +1,128 @@
 initial_implementation
 
-# Implementation plan: next pending M2 app foundation tasks
+# Implementation plan: next pending M2 voting-flow items
 
-## Scope (tight to next unchecked todo slice)
+## Scope (next pending todo items only)
 
-This plan targets the immediate pending items in `todos/initial_implementation.md` under **Immediate next task slice (M2)**:
+This plan covers the next unchecked items in `todos/initial_implementation.md` under **M2 - Voting flow completion**:
 
-1. Create `src/app/main.py` with FastAPI app initialization and local run entrypoint.
-2. Add template wiring and base page layout for the voting flow.
-3. Add session start page route + form (nickname optional, pair count input).
-4. Add POST handler to create `sessions` rows for `actor_type = human`.
-5. Add route tests for session start/create basics.
+1. Add pair selection service module with approved-card loading, warm-up random sampling, and reproducibility logging.
+2. Enforce pair constraints (no self-pairs, no immediate duplicate repeats).
+3. Add GET route to render the current pair (description + image only, no official score).
+4. Add POST vote route persisting `comparisons` fields (`left_card_id`, `right_card_id`, `chosen_card_id`, `presented_order`, `response_ms`).
+5. Implement session progression and completion (`ended_at`, stop at `pair_target_count`).
+6. Add completion page/template and redirect after final vote.
+7. Add/extend tests for pair constraints, vote persistence, and completion behavior.
 
-Out of scope for this slice: pair generation logic, voting route, comparison persistence, ranking, AI voter, and analysis.
+Out of scope for this slice: ranking (M3), AI voter (M4), analysis (M5), and broad UI polish unrelated to pair-voting flow.
 
-## Alignment constraints from SPEC + prompt
+## Alignment with SPEC and prompt
 
-- Follow approved stack: Python 3.11+, FastAPI templates, SQLite via SQLAlchemy, `uv run` commands.
-- Keep first iteration pragmatic: clean structure, minimal complexity, no unnecessary hardening.
-- Match FR-2 session behavior now (anonymous or nickname, configurable pair count, persistent session records).
-- Preserve auditability (persist `pair_target_count`, timestamps, and actor type consistently).
-- Keep architecture modular so M2 pair flow can plug in without rework.
+- FR-2: session-based pairwise voting, configurable count, record each choice, hide official ranking in voting UI.
+- FR-3: warm-up random sampling and deterministic behavior via logged seed/strategy.
+- FR-4: durable persistence and auditability for sessions/comparisons.
+- Prompt constraint: pragmatic first implementation, maintainable structure, avoid overengineering.
 
-## Work plan
+## Implementation plan
 
-## 1) FastAPI app entrypoint (`src/app/main.py`)
-
-### Deliverables
-- App factory or module-level `FastAPI` instance.
-- Local run entrypoint compatible with `uv run python -m src.app.main`.
-- Basic router registration for start/create session endpoints.
-
-### Steps
-1. Create `src/app/main.py` with `FastAPI(...)` app metadata (`title`, version placeholder).
-2. Wire Jinja2 template directory (`src/app/templates` or existing project convention).
-3. Add root route redirect to session start route (or render start directly).
-4. Add `if __name__ == "__main__"` block using `uvicorn.run("src.app.main:app", ...)` for local development.
-
-### Acceptance checks
-- `uv run python -m src.app.main` starts server without import/runtime errors.
-- `GET /` reaches session start UX path.
-
-## 2) Template wiring and base voting layout
+## 1) Pairing service module (`src/app/pairing.py`)
 
 ### Deliverables
-- Shared base template (minimal but reusable for upcoming pair UI).
-- Session start template extending base.
+- A focused service that returns the next valid pair for a session.
+- Strategy metadata (`mode`, `seed`) captured in a reproducible way.
 
-### Steps
-1. Add `base.html` with app title, content block, and area for validation/error messages.
-2. Add `session_start.html` with:
-   - optional `nickname` field,
-   - `pair_target_count` numeric input,
-   - submit action to session creation endpoint.
-3. Keep layout intentionally simple and maintainable; avoid speculative components not needed by current todo items.
+### Tasks
+1. Create a `PairSelector` (or equivalent pure functions) that takes session ID, DB session, and RNG seed.
+2. Query only cards eligible for voting (`status = approved`) and fail with a clear app error if fewer than 2 cards exist.
+3. Implement warm-up mode as random sampling from approved cards for early orders.
+4. Seed RNG deterministically (session-derived seed or persisted seed) and keep seed stable across requests.
+5. Return a pair payload with card IDs and display fields needed by templates (description text and image path only).
 
-### Acceptance checks
-- Template renders without missing-block or path errors.
-- Form fields map exactly to backend handler payload keys.
+### Notes
+- Keep the interface narrow so adaptive/uncertainty mode can be added later without route rewrites.
+- Persist strategy/seed using existing metadata surface if available; otherwise add minimal session-linked metadata storage in app scope.
 
-## 3) Session start GET route + form behavior
-
-### Deliverables
-- Route that displays start form with sensible default pair count.
-
-### Steps
-1. Add `GET /sessions/start` (or equivalent) returning template response.
-2. Provide default value from config constant (e.g., `DEFAULT_PAIR_TARGET = 20`, aligned with SPEC example).
-3. Add simple server-side rendering for field-level errors when submission is invalid.
-
-### Acceptance checks
-- Route returns `200` and includes required fields.
-- Default pair count is visible on first load.
-
-## 4) Session creation POST route (human actor)
+## 2) Pair constraints and validation rules
 
 ### Deliverables
-- Route to insert `sessions` row with `actor_type = human`, optional nickname, selected pair target.
-- Redirect after create (to next step placeholder route or confirmation page).
+- Guards for no self-pairs and no immediate duplicate pair repeats.
 
-### Steps
-1. Add POST endpoint (e.g., `POST /sessions`).
-2. Parse/validate input:
-   - nickname: optional, trim whitespace, store `NULL` when empty,
-   - pair target: integer, positive, bounded by practical max (small guardrail for local UX).
-3. Persist session with required fields from data model: `actor_type`, `nickname`, `pair_target_count`, `started_at`.
-4. Commit transaction and return redirect response.
-5. On validation failure, re-render start form with error message and previous values.
+### Tasks
+1. Add canonical pair-key normalization (`min_id:max_id`) to compare pairs independent of left/right order.
+2. Ensure candidate generation always uses distinct card IDs.
+3. Read last presented pair for the session from `comparisons` and exclude that pair-key for the next selection.
+4. Add retry loop with bounded attempts; if exhausted, return a deterministic fallback or a clear completion/blocked state.
 
-### Acceptance checks
-- Valid POST creates one `sessions` record with expected values.
-- Invalid POST does not create a row and returns form with clear error.
+## 3) Voting routes in `src/app/main.py`
 
-## 5) Route tests for session start/create
+### GET route: present current pair
+1. Add route like `GET /sessions/{session_id}/pair`.
+2. Validate session exists, `actor_type = human`, and not already completed.
+3. Compute `presented_order = current_comparison_count + 1`.
+4. If target already reached, redirect to completion route.
+5. Render pair template showing only description and image (no `official_score`).
+
+### POST route: submit vote
+1. Add route like `POST /sessions/{session_id}/vote`.
+2. Validate posted `chosen_card_id` belongs to current left/right card IDs.
+3. Parse `response_ms` as nullable int (allow empty/missing).
+4. Insert `comparisons` row with required fields and computed `presented_order`.
+5. Commit and redirect to next pair or completion depending on count.
+
+## 4) Session progression and completion
 
 ### Deliverables
-- Test module covering happy path and basic validation.
+- Reliable stop condition at `pair_target_count` with `sessions.ended_at` persisted.
 
-### Steps
-1. Add tests using FastAPI `TestClient` and test database/session fixture.
-2. Test `GET` start route returns `200` and contains form controls.
-3. Test valid `POST`:
-   - returns redirect status,
-   - persists session row,
-   - stores `actor_type = human` and expected `pair_target_count`.
-4. Test invalid `POST` (non-integer/negative/out-of-range count) returns `200` form with error and no DB insert.
-5. Test empty nickname persists as `NULL` and non-empty nickname is trimmed.
+### Tasks
+1. After each vote, count comparisons for session and compare to `pair_target_count`.
+2. On reaching target, set `ended_at` once and redirect to completion page.
+3. Prevent additional vote writes for ended sessions (idempotent guard).
+4. Ensure completion route is accessible for completed sessions and safe for refresh.
 
-### Acceptance checks
-- `uv run pytest` passes new route tests.
-- Tests are deterministic and independent of existing local DB state.
+## 5) Templates for pair and completion
+
+### Deliverables
+- `pair.html` and `complete.html` integrated with existing base layout.
+
+### Tasks
+1. `pair.html`: render left/right cards with description + image and submit controls for selected card.
+2. Include hidden values required for safe vote validation (`left_card_id`, `right_card_id`, `presented_order` if used).
+3. Add optional client-side response-time capture (hidden `response_ms`) with server-side nullable fallback.
+4. `complete.html`: show session completion state and compact summary (session ID, total votes recorded).
+
+## 6) Tests (route + pairing behavior)
+
+### Deliverables
+- Deterministic tests covering all new M2 behavior in this slice.
+
+### Test cases
+1. Pair selection uses only approved cards.
+2. Pair selection never returns identical card IDs.
+3. Consecutive selections avoid immediate duplicate pair-key.
+4. GET pair route redirects to completion when target met.
+5. POST vote persists required comparison fields correctly.
+6. Invalid chosen card submission is rejected and does not write a comparison.
+7. Session sets `ended_at` exactly when final vote is recorded.
+
+### Test data strategy
+- Use `tmp_path` DB fixtures and small card sets (2-5 cards) for deterministic edge coverage.
+- Seed RNG explicitly in tests to avoid flaky pair expectations.
 
 ## Execution order
 
-1. Build `src/app/main.py` and template environment wiring.
-2. Create base + session start templates.
-3. Implement `GET` session start route.
-4. Implement `POST` session creation + validation + redirect.
-5. Add route tests and run targeted pytest.
+1. Build `src/app/pairing.py` and unit-test core pair constraints first.
+2. Add pair/completion templates and GET pair route.
+3. Implement POST vote write path with validation.
+4. Add session completion updates (`ended_at`) and redirects.
+5. Finish route-level tests and run targeted then full app tests.
 
 ## Verification commands
 
+- `uv run pytest tests -k "pair or session or vote" -q`
+- `uv run pytest -q`
 - `uv run python -m src.app.main`
-- `uv run pytest -k "session and app"` (or the specific new test module path)
 
-## Done definition for this planning slice
+## Done definition for this slice
 
-This slice is complete when a user can open the FastAPI app, start a human session via form submission, and have the session stored in SQLite with validated `pair_target_count`; route tests confirm GET/POST behavior and basic input handling.
+This slice is done when a human session can repeatedly receive valid approved-card pairs, submit votes that persist complete comparison records, and automatically reach a completion page at `pair_target_count` with `sessions.ended_at` set; tests validate pair constraints, vote persistence, and completion behavior.

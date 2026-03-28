@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Vote Pair - Ship Happens{% endblock %}
+
+{% block content %}
+  <p>Vote {{ presented_order }} of {{ total_pairs }}. Pick the worse situation.</p>
+  <form method="post" action="/sessions/{{ session_id }}/vote" id="vote-form">
+    <input type="hidden" name="left_card_id" value="{{ left_card.id }}">
+    <input type="hidden" name="right_card_id" value="{{ right_card.id }}">
+    <input type="hidden" name="presented_order" value="{{ presented_order }}">
+    <input type="hidden" name="response_ms" id="response_ms" value="">
+
+    <section>
+      <h2>Left card</h2>
+      <p>{{ left_card.description_text or "(no description extracted)" }}</p>
+      <p><img src="/cards/{{ left_card.id }}/image" alt="Left card image" style="max-width: 100%;"></p>
+      <button type="submit" name="chosen_card_id" value="{{ left_card.id }}">Choose left</button>
+    </section>
+
+    <section>
+      <h2>Right card</h2>
+      <p>{{ right_card.description_text or "(no description extracted)" }}</p>
+      <p><img src="/cards/{{ right_card.id }}/image" alt="Right card image" style="max-width: 100%;"></p>
+      <button type="submit" name="chosen_card_id" value="{{ right_card.id }}">Choose right</button>
+    </section>
+  </form>
+
+  <script>
+    const startMs = Date.now();
+    const form = document.getElementById("vote-form");
+    const responseInput = document.getElementById("response_ms");
+    form.addEventListener("submit", function () {
+      responseInput.value = String(Date.now() - startMs);
+    });
+  </script>
+{% endblock %}
