@@ -3,6 +3,39 @@
 {% block title %}Vote Pair - Ship Happens{% endblock %}
 
 {% block content %}
+  <style>
+    .pair-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .pair-card {
+      border: 1px solid #ddd9cf;
+      border-radius: 8px;
+      padding: 1rem;
+      background: #faf9f5;
+    }
+
+    .pair-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+    }
+
+    .pair-card button {
+      width: 100%;
+    }
+
+    @media (max-width: 760px) {
+      .pair-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+
   <p>Vote {{ presented_order }} of {{ total_pairs }}. Pick the worse situation.</p>
   <form method="post" action="/sessions/{{ session_id }}/vote" id="vote-form">
     <input type="hidden" name="left_card_id" value="{{ left_card.id }}">
@@ -10,19 +43,19 @@
     <input type="hidden" name="presented_order" value="{{ presented_order }}">
     <input type="hidden" name="response_ms" id="response_ms" value="">
 
-    <section>
-      <h2>Left card</h2>
-      <p>{{ left_card.description_text or "(no description extracted)" }}</p>
-      <p><img src="/cards/{{ left_card.id }}/image" alt="Left card image" style="max-width: 100%;"></p>
-      <button type="submit" name="chosen_card_id" value="{{ left_card.id }}">Choose left</button>
-    </section>
+    <div class="pair-grid">
+      <section class="pair-card">
+        <h2>Left card</h2>
+        <p><img src="/cards/{{ left_card.id }}/image" alt="Left card image"></p>
+        <button type="submit" name="chosen_card_id" value="{{ left_card.id }}">Choose left</button>
+      </section>
 
-    <section>
-      <h2>Right card</h2>
-      <p>{{ right_card.description_text or "(no description extracted)" }}</p>
-      <p><img src="/cards/{{ right_card.id }}/image" alt="Right card image" style="max-width: 100%;"></p>
-      <button type="submit" name="chosen_card_id" value="{{ right_card.id }}">Choose right</button>
-    </section>
+      <section class="pair-card">
+        <h2>Right card</h2>
+        <p><img src="/cards/{{ right_card.id }}/image" alt="Right card image"></p>
+        <button type="submit" name="chosen_card_id" value="{{ right_card.id }}">Choose right</button>
+      </section>
+    </div>
   </form>
 
   <script>

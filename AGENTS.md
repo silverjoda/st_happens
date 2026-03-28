@@ -20,6 +20,8 @@ Operational guide for coding agents working in this repository.
 - Dependency and tool config: `pyproject.toml`.
 - Main code under `src/`.
 - Tests under `tests/`.
+- When the user provides a spec correction, addition, or amendment during work,
+  record that change in `SPEC.md` as part of the task.
 
 ## Cursor and Copilot rules
 
@@ -150,6 +152,7 @@ Operational guide for coding agents working in this repository.
 - Runtime DB default is under `data/ship_happens.db` unless overridden by env.
 - Processed ingestion artifacts go to `data/processed/`.
 - Analysis/report outputs go to `outputs/`.
+- Treat `outputs/ocr_test_claude_results.json` as a locked manual-correction baseline; its description and score fields are authoritative and must not be edited.
 - Use UTF-8 when writing text/json artifacts.
 
 ## Change management for agents

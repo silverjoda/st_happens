@@ -4,21 +4,21 @@ import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
 
 from src.app.main import app
 from src.app.pairing import canonical_pair_key, load_approved_cards, select_next_pair
+from src.app.session_results import load_session_result
 from src.common.db import create_schema, session_scope
-from src.common.models import Card, Comparison, SessionRecord
+from src.common.models import Card
+from src.common.settings import display_card_path_for_score, display_card_path_for_source
 
 
 def _db_url_for_tmp(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'test_app_sessions.db'}"
 
 
-def _count_sessions() -> int:
-    with session_scope() as session:
-        return session.scalar(select(func.count()).select_from(SessionRecord)) or 0
+def _results_dir_for_tmp(tmp_path: Path) -> str:
+    return str(tmp_path / "session_results")
 
 
 def _write_fake_image(tmp_path: Path, name: str) -> str:
@@ -56,10 +56,11 @@ def _insert_cards(
 
         session.flush()
         inserted_ids = [
-            card_id
-            for card_id in session.scalars(
-                select(Card.id).where(Card.status == "approved").order_by(Card.id)
-            )
+            card.id
+            for card in session.query(Card)
+            .filter(Card.status == "approved")
+            .order_by(Card.id)
+            .all()
         ]
 
     return inserted_ids
@@ -74,6 +75,7 @@ def _extract_hidden_value(html: str, field_name: str) -> int:
 
 def test_session_start_route_renders_form(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     with TestClient(app) as client:
         response = client.get("/sessions/start")
@@ -84,8 +86,9 @@ def test_session_start_route_renders_form(monkeypatch, tmp_path: Path) -> None:
     assert 'value="20"' in response.text
 
 
-def test_create_session_valid_post_persists_human_session(monkeypatch, tmp_path: Path) -> None:
+def test_create_session_valid_post_persists_human_session_file(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     with TestClient(app) as client:
         response = client.post(
@@ -98,22 +101,22 @@ def test_create_session_valid_post_persists_human_session(monkeypatch, tmp_path:
         )
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/sessions/")
-    assert response.headers["location"].endswith("/pair")
-    assert _count_sessions() == 1
+    assert response.headers["location"] == "/sessions/1/pair"
 
-    with session_scope() as session:
-        saved = session.scalar(select(SessionRecord))
-        assert saved is not None
-        assert saved.actor_type == "human"
-        assert saved.nickname == "Alice"
-        assert saved.pair_target_count == 25
+    saved = load_session_result(1)
+    assert saved is not None
+    assert saved.actor_type == "human"
+    assert saved.nickname == "Alice"
+    assert saved.pair_target_count == 25
+    assert saved.ended_at is None
+    assert saved.comparisons == []
 
 
-def test_create_session_invalid_pair_target_shows_error_no_insert(
+def test_create_session_invalid_pair_target_shows_error_no_file(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     with TestClient(app) as client:
         response = client.post(
@@ -127,11 +130,12 @@ def test_create_session_invalid_pair_target_shows_error_no_insert(
 
     assert response.status_code == 200
     assert "Pair target count must be between 1 and 500." in response.text
-    assert _count_sessions() == 0
+    assert load_session_result(1) is None
 
 
 def test_nickname_empty_persists_null(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     with TestClient(app) as client:
         response = client.post(
@@ -144,15 +148,14 @@ def test_nickname_empty_persists_null(monkeypatch, tmp_path: Path) -> None:
         )
 
     assert response.status_code == 303
-
-    with session_scope() as session:
-        saved = session.scalar(select(SessionRecord))
-        assert saved is not None
-        assert saved.nickname is None
+    saved = load_session_result(1)
+    assert saved is not None
+    assert saved.nickname is None
 
 
 def test_pair_selection_uses_only_approved_cards(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     _insert_cards(tmp_path, approved_count=3, extracted_count=2)
 
@@ -162,8 +165,163 @@ def test_pair_selection_uses_only_approved_cards(monkeypatch, tmp_path: Path) ->
         assert all(card.status == "approved" for card in approved)
 
 
+def test_card_image_prefers_preprocessed_display_asset(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "raw-card.jpg"
+    source_path.write_bytes(b"raw")
+    display_path = display_card_path_for_score(10.0)
+    display_path.parent.mkdir(parents=True, exist_ok=True)
+    display_path.write_bytes(b"processed")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=10.0,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
+    assert response.status_code == 200
+    assert response.content == b"processed"
+
+
+def test_card_image_serves_display_asset_even_if_raw_source_is_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "missing-raw-card.jpg"
+    display_path = display_card_path_for_score(44.5)
+    display_path.parent.mkdir(parents=True, exist_ok=True)
+    display_path.write_bytes(b"processed-only")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=44.5,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
+    assert response.status_code == 200
+    assert response.content == b"processed-only"
+
+
+def test_card_image_prefers_score_prefixed_display_asset(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "20230909_120741.jpg"
+    source_path.write_bytes(b"raw")
+
+    score_display_path = display_card_path_for_score(333.0)
+    score_display_path.parent.mkdir(parents=True, exist_ok=True)
+    score_display_path.write_bytes(b"score-prefixed")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=333.0,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
+    assert response.status_code == 200
+    assert response.content == b"score-prefixed"
+
+
+def test_card_image_requires_official_score(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "raw-card.jpg"
+    source_path.write_bytes(b"raw")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=None,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
+    assert response.status_code == 404
+
+
+def test_card_image_never_falls_back_to_raw_source(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    source_path = tmp_path / "raw-card.jpg"
+    source_path.write_bytes(b"raw")
+
+    create_schema()
+    with session_scope() as session:
+        card = Card(
+            source_image_path=str(source_path),
+            description_text="Card",
+            official_score=88.0,
+            status="approved",
+        )
+        session.add(card)
+        session.flush()
+        card_id = card.id
+
+    with TestClient(app) as client:
+        response_missing = client.get(f"/cards/{card_id}/image")
+
+    assert response_missing.status_code == 404
+
+    source_based_display_path = display_card_path_for_source(source_path)
+    source_based_display_path.parent.mkdir(parents=True, exist_ok=True)
+    source_based_display_path.write_bytes(b"processed")
+
+    with TestClient(app) as client:
+        response = client.get(f"/cards/{card_id}/image")
+
+    assert response.status_code == 200
+    assert response.content == b"processed"
+
+
 def test_pair_selection_never_self_pairs(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     _insert_cards(tmp_path, approved_count=3)
 
@@ -175,36 +333,19 @@ def test_pair_selection_never_self_pairs(monkeypatch, tmp_path: Path) -> None:
 
 def test_pair_selection_avoids_immediate_duplicate_pair_key(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     card_ids = _insert_cards(tmp_path, approved_count=4)
     with session_scope() as session:
-        session.add(
-            SessionRecord(
-                actor_type="human",
-                nickname="alice",
-                pair_target_count=10,
-            )
+        previous = select_next_pair(session, session_id=1, presented_order=1)
+        previous_key = canonical_pair_key(previous.left_card.id, previous.right_card.id)
+        current = select_next_pair(
+            session,
+            session_id=1,
+            presented_order=2,
+            blocked_pair_key=previous_key,
         )
-        session.flush()
-        session_id = session.scalar(select(SessionRecord.id).limit(1))
-        assert session_id is not None
 
-        previous = select_next_pair(session, session_id=session_id, presented_order=1)
-        session.add(
-            Comparison(
-                session_id=session_id,
-                left_card_id=previous.left_card.id,
-                right_card_id=previous.right_card.id,
-                chosen_card_id=previous.left_card.id,
-                presented_order=1,
-                response_ms=10,
-            )
-        )
-        session.flush()
-
-        current = select_next_pair(session, session_id=session_id, presented_order=2)
-
-    previous_key = canonical_pair_key(previous.left_card.id, previous.right_card.id)
     current_key = canonical_pair_key(current.left_card.id, current.right_card.id)
     assert previous_key != current_key
     assert {current.left_card.id, current.right_card.id}.issubset(set(card_ids))
@@ -212,6 +353,7 @@ def test_pair_selection_avoids_immediate_duplicate_pair_key(monkeypatch, tmp_pat
 
 def test_get_pair_redirects_to_complete_when_target_met(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     _insert_cards(tmp_path, approved_count=2)
 
@@ -249,6 +391,7 @@ def test_get_pair_redirects_to_complete_when_target_met(monkeypatch, tmp_path: P
 
 def test_post_vote_persists_required_fields(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     _insert_cards(tmp_path, approved_count=3)
 
@@ -280,18 +423,20 @@ def test_post_vote_persists_required_fields(monkeypatch, tmp_path: Path) -> None
     assert response.status_code == 303
     assert response.headers["location"] == f"/sessions/{session_id}/pair"
 
-    with session_scope() as session:
-        comparison = session.scalar(select(Comparison).where(Comparison.session_id == session_id))
-        assert comparison is not None
-        assert comparison.left_card_id == left_card_id
-        assert comparison.right_card_id == right_card_id
-        assert comparison.chosen_card_id == right_card_id
-        assert comparison.presented_order == 1
-        assert comparison.response_ms == 321
+    saved = load_session_result(session_id)
+    assert saved is not None
+    assert len(saved.comparisons) == 1
+    comparison = saved.comparisons[0]
+    assert comparison.left_card_id == left_card_id
+    assert comparison.right_card_id == right_card_id
+    assert comparison.chosen_card_id == right_card_id
+    assert comparison.presented_order == 1
+    assert comparison.response_ms == 321
 
 
 def test_invalid_chosen_card_rejected_without_write(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     card_ids = _insert_cards(tmp_path, approved_count=3)
     outside_card_id = max(card_ids) + 999
@@ -322,20 +467,14 @@ def test_invalid_chosen_card_rejected_without_write(monkeypatch, tmp_path: Path)
 
     assert response.status_code == 400
 
-    with session_scope() as session:
-        count = (
-            session.scalar(
-                select(func.count())
-                .select_from(Comparison)
-                .where(Comparison.session_id == session_id)
-            )
-            or 0
-        )
-        assert count == 0
+    saved = load_session_result(session_id)
+    assert saved is not None
+    assert saved.comparisons == []
 
 
 def test_session_sets_ended_at_on_final_vote(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
     _insert_cards(tmp_path, approved_count=2)
 
@@ -366,7 +505,6 @@ def test_session_sets_ended_at_on_final_vote(monkeypatch, tmp_path: Path) -> Non
     assert response.status_code == 303
     assert response.headers["location"] == f"/sessions/{session_id}/complete"
 
-    with session_scope() as session:
-        record = session.get(SessionRecord, session_id)
-        assert record is not None
-        assert record.ended_at is not None
+    saved = load_session_result(session_id)
+    assert saved is not None
+    assert saved.ended_at is not None

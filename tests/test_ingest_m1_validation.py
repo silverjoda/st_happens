@@ -8,7 +8,7 @@ import numpy as np
 from src.common.db import create_schema, session_scope
 from src.common.models import Card
 from src.ingest.ocr import OCRAdapter
-from src.ingest.parser import parse_official_score
+from src.ingest.parser import clean_description, parse_official_score
 from src.ingest.pipeline import extract_from_image
 from src.ingest.reporting import build_run_report, find_missing_score_increments
 from src.ingest.storage import fetch_review_queue, persist_card_extraction
@@ -135,10 +135,15 @@ def test_downstream_selection_approved_only(monkeypatch, tmp_path: Path) -> None
 def test_parse_official_score_with_common_ocr_substitutions() -> None:
     assert parse_official_score("score: 7S") == 75.0
     assert parse_official_score("O9.5") == 9.5
+    assert parse_official_score("43,5") == 43.5
 
 
 def test_parse_official_score_with_missing_decimal_recovery() -> None:
     assert parse_official_score("995") == 99.5
+
+
+def test_clean_description_removes_static_score_label() -> None:
+    assert clean_description("Vyhorel dum SKALA POSRANOSTI") == "Vyhorel dum"
 
 
 def test_extract_from_image_retries_score_with_recovery_preprocess(monkeypatch) -> None:
@@ -207,3 +212,36 @@ def test_fetch_review_queue_prioritizes_partial_rows(monkeypatch, tmp_path: Path
 
     assert queue.index(expected_partial_id) < queue.index(expected_complete_id)
     assert queue.index(expected_complete_id) < queue.index(expected_empty_id)
+
+
+def test_extract_from_image_persists_display_image_path(monkeypatch, tmp_path: Path) -> None:
+    class StaticOCR(OCRAdapter):
+        def extract_text(self, image: np.ndarray) -> OCRField:
+            return OCRField(text="Description", confidence=95.0)
+
+        def extract_score_text(self, image: np.ndarray) -> OCRField:
+            return OCRField(text="95", confidence=88.0)
+
+    image = np.zeros((120, 80, 3), dtype=np.uint8)
+    source_path = tmp_path / "card.jpg"
+    source_path.write_bytes(b"raw")
+    display_path = tmp_path / "display" / "card_display.jpg"
+
+    monkeypatch.setattr("src.ingest.pipeline.load_image", lambda _: image)
+    monkeypatch.setattr("src.ingest.pipeline.extract_card_region", lambda x: x)
+    monkeypatch.setattr(
+        "src.ingest.pipeline.split_description_and_score_regions",
+        lambda _: (image, image),
+    )
+    monkeypatch.setattr("src.ingest.pipeline.preprocess_image", lambda x: x)
+    monkeypatch.setattr("src.ingest.pipeline.preprocess_score_image", lambda x: x)
+    monkeypatch.setattr("src.ingest.pipeline.build_ui_card_image", lambda x: x)
+    monkeypatch.setattr(
+        "src.ingest.pipeline.display_card_path_for_source",
+        lambda _: display_path,
+    )
+
+    result = extract_from_image(source_path, StaticOCR())
+
+    assert result.display_image_path == str(display_path)
+    assert display_path.exists()

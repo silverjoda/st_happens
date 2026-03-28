@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import uvicorn
@@ -11,12 +10,26 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
 
 from src.app.pairing import PairSelection, select_next_pair
+from src.app.session_results import (
+    SessionResult,
+    append_comparison,
+    comparison_count,
+    create_human_session_result,
+    ensure_results_directory,
+    get_pair_by_order,
+    last_pair_key,
+    load_session_result,
+    set_session_ended,
+)
 from src.common.db import create_schema, session_scope
-from src.common.models import Card, Comparison, SessionRecord
-from src.common.settings import ensure_runtime_directories
+from src.common.models import Card
+from src.common.settings import (
+    display_card_path_for_source,
+    display_card_path_for_score,
+    ensure_runtime_directories,
+)
 
 DEFAULT_PAIR_TARGET = 20
 MIN_PAIR_TARGET = 1
@@ -69,39 +82,24 @@ def _render_session_start(
     )
 
 
-def _get_human_session_or_404(session_id: int) -> SessionRecord:
-    with session_scope() as session:
-        record = session.get(SessionRecord, session_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="session_not_found")
-        if record.actor_type != "human":
-            raise HTTPException(status_code=404, detail="session_not_found")
-        session.expunge(record)
-        return record
+def _get_human_session_or_404(session_id: int) -> SessionResult:
+    record = load_session_result(session_id)
+    if record is None or record.actor_type != "human":
+        raise HTTPException(status_code=404, detail="session_not_found")
+    return record
 
 
 def _comparison_count(session_id: int) -> int:
-    with session_scope() as session:
-        return (
-            session.scalar(
-                select(func.count())
-                .select_from(Comparison)
-                .where(Comparison.session_id == session_id)
-            )
-            or 0
-        )
+    record = _get_human_session_or_404(session_id)
+    return comparison_count(record)
 
 
 def _set_session_ended(session_id: int) -> None:
-    with session_scope() as session:
-        record = session.get(SessionRecord, session_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="session_not_found")
-        if record.ended_at is None:
-            record.ended_at = datetime.utcnow()
+    record = _get_human_session_or_404(session_id)
+    set_session_ended(record)
 
 
-def _current_pair_for_session(session_id: int) -> tuple[SessionRecord, PairSelection, int]:
+def _current_pair_for_session(session_id: int) -> tuple[SessionResult, PairSelection, int]:
     session_record = _get_human_session_or_404(session_id)
     if session_record.ended_at is not None:
         raise HTTPException(status_code=409, detail="session_already_completed")
@@ -113,7 +111,12 @@ def _current_pair_for_session(session_id: int) -> tuple[SessionRecord, PairSelec
 
     with session_scope() as session:
         try:
-            pair = select_next_pair(session, session_id=session_id, presented_order=presented_order)
+            pair = select_next_pair(
+                session,
+                session_id=session_id,
+                presented_order=presented_order,
+                blocked_pair_key=last_pair_key(session_record),
+            )
         except ValueError as exc:
             if str(exc) in {"not_enough_approved_cards", "pair_selection_exhausted"}:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -130,21 +133,14 @@ def _current_pair_for_session(session_id: int) -> tuple[SessionRecord, PairSelec
 
 
 def _load_pair_by_order(session_id: int, presented_order: int) -> tuple[int, int] | None:
-    with session_scope() as session:
-        row = session.scalar(
-            select(Comparison)
-            .where(Comparison.session_id == session_id)
-            .where(Comparison.presented_order == presented_order)
-            .limit(1)
-        )
-        if row is None:
-            return None
-        return row.left_card_id, row.right_card_id
+    record = _get_human_session_or_404(session_id)
+    return get_pair_by_order(record, presented_order)
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     ensure_runtime_directories()
+    ensure_results_directory()
     create_schema()
 
 
@@ -174,15 +170,11 @@ async def create_session(request: Request):
             error=error,
         )
 
-    with session_scope() as session:
-        session_record = SessionRecord(
-            actor_type="human",
-            nickname=_normalize_nickname(raw_nickname),
-            pair_target_count=pair_target_count,
-        )
-        session.add(session_record)
-        session.flush()
-        session_id = session_record.id
+    session_record = create_human_session_result(
+        nickname=_normalize_nickname(raw_nickname),
+        pair_target_count=pair_target_count,
+    )
+    session_id = session_record.session_id
 
     return RedirectResponse(url=f"/sessions/{session_id}/pair", status_code=303)
 
@@ -204,12 +196,20 @@ async def card_image(card_id: int):
         card = session.get(Card, card_id)
         if card is None:
             raise HTTPException(status_code=404, detail="card_not_found")
-        image_path = Path(card.source_image_path)
 
-    if not image_path.exists() or not image_path.is_file():
-        raise HTTPException(status_code=404, detail="card_image_not_found")
+    candidate_paths = [display_card_path_for_source(card.source_image_path)]
+    if card.official_score is not None:
+        candidate_paths.append(display_card_path_for_score(card.official_score))
 
-    return FileResponse(path=image_path)
+    seen_paths: set[Path] = set()
+    for display_path in candidate_paths:
+        if display_path in seen_paths:
+            continue
+        seen_paths.add(display_path)
+        if display_path.exists() and display_path.is_file():
+            return FileResponse(path=display_path)
+
+    raise HTTPException(status_code=404, detail="card_image_not_found")
 
 
 @app.get("/sessions/{session_id}/pair")
@@ -320,16 +320,20 @@ async def session_vote(request: Request, session_id: int):
     if chosen_card_id not in posted_pair_set:
         raise HTTPException(status_code=400, detail="chosen_card_not_in_pair")
 
-    with session_scope() as session:
-        comparison = Comparison(
-            session_id=session_id,
+    session_record = _get_human_session_or_404(session_id)
+    try:
+        append_comparison(
+            session_record,
             left_card_id=left_card_id,
             right_card_id=right_card_id,
             chosen_card_id=chosen_card_id,
             presented_order=presented_order,
             response_ms=response_ms,
         )
-        session.add(comparison)
+    except ValueError as exc:
+        if str(exc) == "duplicate_presented_order":
+            raise HTTPException(status_code=400, detail="stale_or_invalid_pair") from exc
+        raise
 
     new_count = current_count + 1
     if new_count >= session_record.pair_target_count:

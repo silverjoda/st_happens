@@ -6,6 +6,7 @@ import re
 
 
 _SCORE_PATTERN = re.compile(r"\d+(?:\.\d+)?")
+_STATIC_LABEL_PATTERN = re.compile(r"\bSKALA\s+POSRANOSTI\b", re.IGNORECASE)
 _OCR_SCORE_TRANSLATION = str.maketrans(
     {
         "O": "0",
@@ -27,7 +28,8 @@ def clean_description(text: str | None) -> str | None:
     """Normalize extracted description text."""
     if text is None:
         return None
-    cleaned = " ".join(text.split()).strip()
+    without_static_label = _STATIC_LABEL_PATTERN.sub(" ", text)
+    cleaned = " ".join(without_static_label.split()).strip(" -_:")
     return cleaned or None
 
 

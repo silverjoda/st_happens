@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.common.models import Card, Comparison
+from src.common.models import Card
 
 WARMUP_PAIR_COUNT = 20
 
@@ -56,23 +56,12 @@ def _to_pair_card(card: Card) -> PairCard:
     )
 
 
-def _last_pair_key(session: Session, session_id: int) -> str | None:
-    last = session.scalar(
-        select(Comparison)
-        .where(Comparison.session_id == session_id)
-        .order_by(Comparison.presented_order.desc())
-        .limit(1)
-    )
-    if last is None:
-        return None
-    return canonical_pair_key(last.left_card_id, last.right_card_id)
-
-
 def select_next_pair(
     session: Session,
     *,
     session_id: int,
     presented_order: int,
+    blocked_pair_key: str | None = None,
     selection_seed_base: int | None = None,
 ) -> PairSelection:
     """Select next card pair with warm-up random strategy and repeat guards."""
@@ -86,7 +75,6 @@ def select_next_pair(
         mode = "warmup_random"
     seed = session_id if selection_seed_base is None else selection_seed_base
     rng = random.Random(seed + presented_order)
-    blocked_pair_key = _last_pair_key(session, session_id)
 
     max_attempts = max(8, len(card_ids) * 2)
     chosen_pair_key: str | None = None

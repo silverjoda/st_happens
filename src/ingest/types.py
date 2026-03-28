@@ -20,6 +20,7 @@ class ExtractionResult:
     ocr_confidence_score: float | None
     status: str
     failure_reason: str | None
+    display_image_path: str | None = None
 
 
 @dataclass(slots=True)

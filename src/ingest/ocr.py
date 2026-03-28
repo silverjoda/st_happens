@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import re
 from statistics import mean
 from typing import Any
 
@@ -20,15 +21,19 @@ class OCRAdapter(ABC):
     def extract_text(self, image: np.ndarray) -> OCRField:
         """Extract text and confidence from an image."""
 
+    def extract_score_text(self, image: np.ndarray) -> OCRField:
+        """Extract score text with score-specific OCR tuning when supported."""
+        return self.extract_text(image)
+
 
 class TesseractOCR(OCRAdapter):
     """Default OCR adapter using pytesseract."""
 
-    def extract_text(self, image: np.ndarray) -> OCRField:
+    def _extract_with_config(self, image: np.ndarray, config: str) -> OCRField:
         data: dict[str, list[Any]] = pytesseract.image_to_data(
             image,
             output_type=pytesseract.Output.DICT,
-            config="--psm 6",
+            config=config,
         )
         tokens: list[str] = []
         confidences: list[float] = []
@@ -50,6 +55,30 @@ class TesseractOCR(OCRAdapter):
         joined = " ".join(tokens).strip() or None
         aggregate_conf = mean(confidences) if confidences else None
         return OCRField(text=joined, confidence=aggregate_conf)
+
+    def extract_text(self, image: np.ndarray) -> OCRField:
+        return self._extract_with_config(image=image, config="--psm 6")
+
+    def extract_score_text(self, image: np.ndarray) -> OCRField:
+        best: OCRField | None = None
+        best_digit_count = -1
+        for config in (
+            "--psm 7 -c tessedit_char_whitelist=0123456789,.",
+            "--psm 8 -c tessedit_char_whitelist=0123456789,.",
+            "--psm 6 -c tessedit_char_whitelist=0123456789,.",
+        ):
+            current = self._extract_with_config(image=image, config=config)
+            digit_count = len(re.findall(r"\d", current.text or ""))
+            if digit_count > best_digit_count:
+                best = current
+                best_digit_count = digit_count
+                continue
+            if digit_count == best_digit_count and best is not None:
+                current_conf = current.confidence if current.confidence is not None else -1.0
+                best_conf = best.confidence if best.confidence is not None else -1.0
+                if current_conf > best_conf:
+                    best = current
+        return best if best is not None else self.extract_text(image)
 
 
 class EasyOCROCR(OCRAdapter):

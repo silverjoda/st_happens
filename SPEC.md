@@ -31,7 +31,17 @@ The core question is: how closely do human and AI rankings align with the offici
 - Source data is in `data/raw_photos/` as smartphone photos.
 - Card count is roughly ~200 cards (exact count discovered during ingestion).
 - Official card scores are numeric and expected on a 1-100 style scale; 0.5 increments are possible and should be supported.
+- Card photos are not guaranteed to be perfectly vertical; ingestion should align each detected card to vertical orientation before OCR.
+- Ingestion must also produce a UI-safe display image per card by preprocessing the photo-detected card region (robust boundary detection against real-photo shadows/lighting variance, deskew/rotation to vertical, fixed-size normalization, and masking/removing the yellow score box).
+- Card visual priors for OCR are stable:
+  - card body is dark/black,
+  - photo background is light/white,
+  - description text is yellow and in Czech near the top,
+  - score is black text inside a yellow box in the middle-bottom area,
+  - the fixed phrase `SKALA POSRANOSTI` appears above the score box and should be ignored during semantic extraction.
+- Official score format can be integer (e.g., `43`) or decimal using comma notation (e.g., `43,5`).
 - OCR from photos will be noisy; manual correction pass is mandatory in workflow design.
+- `outputs/ocr_test_claude_results.json` is the manually corrected OCR baseline for this repo; description and score fields in that file are treated as authoritative and must not be edited further.
 - First implementation should prioritize local reproducibility and low operational complexity.
 
 ## 5) Technology Choices (Approved Defaults)
@@ -58,6 +68,7 @@ Rationale:
    - Reads raw card photos
    - Detects/aligned card region
    - Extracts text fields (situation + official score)
+   - Produces a preprocessed UI-safe image asset for each card in `data/processed/display_cards/`
    - Stores extracted results and confidence metadata
    - Supports manual review/edit and approval
 
@@ -104,6 +115,7 @@ Rationale:
 ## 8) Data Model (SQLite)
 
 ### cards
+- Note (Phase-1): extraction run output is file-based (`data/processed/*.json` and `*.jsonl`); this table can be populated later via import/review flow.
 - `id` (PK)
 - `source_image_path` (text)
 - `description_text` (text)
@@ -153,7 +165,15 @@ Rationale:
 - System extracts:
   - situation description (top region)
   - official numeric score (bottom region)
-- System persists extraction result with confidence metadata.
+- System persists extraction result with confidence metadata into file artifacts in `data/processed/` (JSON/JSONL) as the canonical Phase-1 ingestion output.
+- System must also persist UI-safe preprocessed card images in `data/processed/display_cards/`, with one deterministic output image per source photo.
+- During extraction runs, raw photos are renamed in deterministic sorted order with score-sequence prefixes: `100`, `99.5`, `99`, ... down to `0.5` (format: `<score>_raw.jpg`).
+- Preprocessed display-card image filenames must preserve the same score prefix from the corresponding raw photo (format: `<score>_processed.jpg`).
+- UI-safe preprocessing requirements:
+  - robustly detect card boundaries for a dark card on light background despite realistic shadows/exposure variance,
+  - rotate/deskew card to vertical orientation,
+  - normalize all card outputs to a consistent image size,
+  - remove or mask the yellow score box so score is not visible to voters.
 - System provides manual review workflow to correct OCR output before approval.
 - System generates a full digitization report per extraction run, including:
   - total images processed, success/failure counts, and failure reasons
@@ -171,11 +191,14 @@ Rationale:
 - User can start a new session as anonymous or with nickname.
 - User can choose session pair count (default configurable; example 20).
 - System presents one pair at a time and records choice.
-- For each card in the pair, UI shows description + card image but does not show official author ranking.
+- Pair UI should display both cards side-by-side on desktop (with responsive fallback for narrow/mobile screens).
+- For each card in the pair, UI shows only the card image (do not duplicate the description as separate text).
+- Pair UI must render from preprocessed UI-safe images in `data/processed/display_cards/` so the yellow score box is not visible.
 - System prevents self-pairing and duplicate immediate repeats within a session.
 - Session ends when target pair count is reached or user exits.
 
 ### FR-3: Pair generation strategy
+- Every generated pair must contain two distinct cards (`left_card_id != right_card_id`).
 - Warm-up: random sampling for initial comparisons.
 - Main mode: uncertainty/adaptive sampling to maximize ranking information gain.
 - Strategy and seed are logged for reproducibility.
@@ -255,6 +278,7 @@ Expected commands/scripts (exact filenames may evolve, behavior is required):
 
 ### Ingestion validation
 - Sample-based spot checks after extraction.
+- Preprocessed UI-safe card images must be manually inspectable on disk in `data/processed/display_cards/` to verify alignment/size normalization and score masking quality.
 - Require manual approval status for inclusion in ranking runs.
 - Add automated test that verifies the extracted official-score set contains every 0.5 increment from 0.5 to 100.0.
 - If any increment in `0.5, 1.0, 1.5, ..., 100.0` is missing, ingestion run is flagged as invalid pending review.
