@@ -167,7 +167,7 @@ while (( loop <= MAX_LOOPS )); do
 
   run_stage \
     "Stage 4/6 - Build" \
-    "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${PLAN_FILE}. Implement the plan from ${PLAN_FILE} for current pending todo item(s). Update files in this repository and keep changes minimal and aligned with spec and prompt." \
+    "Read ${SPEC_FILE}, ${PROMPT_FILE}, and ${PLAN_FILE}. Implement the plan from ${PLAN_FILE} for current pending todo item(s). Update files in this repository and keep changes minimal and aligned with spec and prompt. After finishing a discrete feature/task from ${TODO_FILE}, run git add and create a commit when it is a sensible checkpoint." \
     "no" \
     "" \
     "$loop" \

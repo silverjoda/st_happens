@@ -3,6 +3,12 @@
 - [x] Read SPEC.md and extract constraints relevant to initial_implementation
 - [x] Break the requested work into concrete implementation tasks
 
+## Status snapshot (from this checklist)
+
+- Completed milestones: M1 fully complete; M2 implemented but app test execution is blocked by missing `jinja2` dependency
+- Remaining milestone work: stabilize M3 Bradley-Terry and ranking test pass state, then M4 AI voter, then M5 analysis reporting
+- Immediate priority: finish M3 before starting M4/M5
+
 ## M1 - Data ingestion foundation (highest priority)
 
 - [x] Create project package structure under `src/` with modules for ingest, app, ranking, ai_user, analysis
@@ -27,17 +33,17 @@
 
 ## Next milestones (after M1)
 
-- [ ] M2: Create `src/app/main.py` FastAPI entrypoint and app factory
+- [x] M2: Create `src/app/main.py` FastAPI entrypoint and app factory
 - [x] M2: Add template set for session flow (`start`, `pair`, `complete`) and shared layout
 - [x] M2: Implement session start route (anonymous/nickname + pair target input)
 - [x] M2: Implement pair generator with deterministic seed logging and warm-up random sampling
 - [x] M2: Enforce pair constraints (no self-pairs, no immediate duplicate repeats)
 - [x] M2: Implement vote submission route and persist `comparisons` (order + latency)
 - [x] M2: Add route-level tests for session creation and vote submission
-- [ ] M3: Create `src/ranking/run.py` CLI runner with args for `population` and `algorithm`
+- [x] M3: Create `src/ranking/run.py` CLI runner with args for `population` and `algorithm`
 - [ ] M3: Implement Bradley-Terry ranking from stored comparisons
-- [ ] M3: Implement Elo baseline ranking from stored comparisons
-- [ ] M3: Normalize scores to [1, 100] and persist `ranking_runs` + `ranking_results`
+- [x] M3: Implement Elo baseline ranking from stored comparisons
+- [x] M3: Normalize scores to [1, 100] and persist `ranking_runs` + `ranking_results`
 - [ ] M3: Add synthetic-order ranking tests and basic seed stability checks
 - [ ] M4: Create `src/ai_user/run.py` runner for description-only pair voting
 - [ ] M4: Persist AI sessions/comparisons with `sessions.actor_type = ai`
@@ -46,13 +52,45 @@
 - [ ] M5: Compute/report Spearman, Kendall tau, and mean absolute difference
 - [ ] M5: Output top disagreement cards and write report artifacts to `outputs/`
 
-## Immediate next task slice (M2)
+## Immediate next task slice (M2 - completed)
 
 - [x] Create `src/app/main.py` with FastAPI app initialization and local run entrypoint
 - [x] Add template wiring and base page layout for the voting flow
 - [x] Add `session_start` page route + form (nickname optional, pair count input)
 - [x] Add POST handler to create `sessions` rows for human actor_type
 - [x] Add route tests for session start/create basics
+
+## Immediate next task slice (M3)
+
+- [x] Create ranking CLI command entrypoint: `uv run python -m src.ranking.run --population <human|ai|combined> --algorithm <bradley_terry|elo>`
+- [x] Add ranking data loader utilities:
+  - [x] load approved cards for ranking universe
+  - [x] load comparisons filtered by population (`human`, `ai`, `combined`)
+  - [x] validate minimum data and emit stable error tokens for invalid states
+- [ ] Implement Bradley-Terry ranking core:
+  - [x] convert comparisons into win/loss signals where chosen card is treated as worse
+- [ ] fit latent severities with deterministic initialization/seed handling
+  - [x] expose uncertainty proxy placeholder in run metadata if full CI not yet implemented
+- [x] Implement Elo baseline ranking core:
+  - [x] deterministic pass over comparisons
+  - [x] configurable K-factor in `config_json`
+- [x] Implement normalization + persistence:
+  - [x] min-max normalize raw scores to `[1, 100]`
+  - [x] persist `ranking_runs` row with algorithm/config metadata
+  - [x] persist one `ranking_results` row per approved card with raw + normalized scores + rank position
+- [ ] Add M3 tests:
+- [ ] synthetic-order recovery for Bradley-Terry
+  - [x] synthetic-order recovery for Elo
+- [ ] seed stability sanity check (same seed -> same ordering on fixed input)
+  - [x] DB persistence checks for `ranking_runs` and `ranking_results`
+
+## Current actionable next tasks (ordered)
+
+- [ ] M3: Implement Bradley-Terry fitting in ranking core with deterministic seed behavior
+- [ ] M3: Wire Bradley-Terry outputs into existing normalization + persistence path
+- [ ] M3: Add synthetic known-order test for Bradley-Terry recovery
+- [ ] M3: Add seed stability test (same seed and input -> same ordering)
+- [ ] M3: Run targeted ranking tests, then full `uv run pytest -q`
 
 ## Refined actionable checklist (current focus)
 
@@ -80,10 +118,10 @@
 
 ### M3 - Ranking engine skeleton
 
-- [ ] Create `src/ranking/run.py` CLI with args for `population` and `algorithm`
+- [x] Create `src/ranking/run.py` CLI with args for `population` and `algorithm`
 - [ ] Implement Bradley-Terry fit from stored comparisons
-- [ ] Implement Elo baseline from stored comparisons
-- [ ] Normalize to [1, 100] and persist `ranking_runs` + `ranking_results`
+- [x] Implement Elo baseline from stored comparisons
+- [x] Normalize to [1, 100] and persist `ranking_runs` + `ranking_results`
 - [ ] Add ranking tests for synthetic known ordering and seed stability
 
 ### M4 - AI voter skeleton
