@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ship-happens"
+version = "0.1.0"
+description = "Digitize Ship Happens cards and compare author, human, and AI rankings"
+readme = "SPEC.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.116.0",
+  "uvicorn>=0.35.0",
+  "sqlalchemy>=2.0.0",
+  "pydantic>=2.10.0",
+  "opencv-python>=4.10.0",
+  "pytesseract>=0.3.10",
+  "numpy>=2.1.0",
+  "pandas>=2.2.0",
+  "scipy>=1.14.0",
+]
+
+[project.optional-dependencies]
+ocr-fallback = [
+  "easyocr>=1.7.1",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28.0",
+  "pytest>=8.3.0",
+  "ruff>=0.12.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
