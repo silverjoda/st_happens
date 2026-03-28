@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.common.db import create_schema, session_scope
 from src.common.models import Card
+from src.ingest.parser import parse_official_score
 from src.ingest.reporting import build_run_report, find_missing_score_increments
 from src.ingest.storage import persist_card_extraction
 from src.ingest.types import ExtractionResult
@@ -125,3 +126,12 @@ def test_downstream_selection_approved_only(monkeypatch, tmp_path: Path) -> None
         assert len(approved) == 1
         assert approved[0].status == "approved"
         assert approved[0].source_image_path == "/tmp/approved.jpg"
+
+
+def test_parse_official_score_with_common_ocr_substitutions() -> None:
+    assert parse_official_score("score: 7S") == 75.0
+    assert parse_official_score("O9.5") == 9.5
+
+
+def test_parse_official_score_with_missing_decimal_recovery() -> None:
+    assert parse_official_score("995") == 99.5

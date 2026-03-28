@@ -68,6 +68,13 @@
 
 ## Verification notes (latest run)
 
+- 2026-03-28 14:50 CET: Audited pre-cleanup inflation state via DB/FS counts: `cards=526`, distinct `source_image_path=200`, status=`approved:185,rejected:341`, raw photos=`200`; top duplicate paths had `count=3`, indicating repeated append-only extraction runs without upsert/dedupe.
+- 2026-03-28 14:50 CET: Chose strategy **B (reset/rebuild)** for reproducibility/low risk. Added reset CLI `uv run python -m src.ingest.reset_dataset` (`src/ingest/reset_dataset.py`) and executed it; snapshot created at `data/reset_snapshots/reset_20260328T134146Z`.
+- 2026-03-28 14:50 CET: Clean extraction rerun -> `Processed=200`, `Successes=66`, `Failures=134`; artifacts: `data/processed/ingestion_report_20260328T134151Z.json`, `.md`, and `ingestion_log_20260328T134151Z.jsonl`; post-run DB invariant check: `cards=200`, distinct paths=`200`, duplicate path groups=`0`.
+- 2026-03-28 14:50 CET: Deterministic review completion pass on clean set (approve only valid description+score+0.5-step) -> `approved=65`, `rejected=135`, ratio `32.50%`.
+- 2026-03-28 14:50 CET: Tightened OCR score parsing heuristics (`src/ingest/parser.py`: OCR character substitutions + missing-decimal recovery), validated by new tests in `tests/test_ingest_m1_validation.py` (`uv run pytest tests/test_ingest_m1_validation.py -q` -> `7 passed`).
+- 2026-03-28 14:50 CET: Reset/re-extract/review iteration after parser update -> extraction `Successes=114`, `Failures=86`; artifacts: `data/processed/ingestion_report_20260328T134613Z.json`, `.md`; deterministic review result `approved=114`, `rejected=86`, final clean-baseline ratio `57.00%` (still below `>=95%`).
+- 2026-03-28 14:50 CET: Downstream smoke rerun on cleaned dataset: seeded deterministic human session (`session_id=1`, `comparisons=200`), `uv run python -m src.ranking.run --population human --algorithm bradley_terry` -> `run_id=1`; `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1` -> `session_id=2`, `ai_run_id=1`; `uv run python -m src.ranking.run --population ai --algorithm bradley_terry` -> `run_id=2`; `uv run python -m src.analysis.compare --human-run 1 --ai-run 2` -> `outputs/comparison_h1_a2.json` and `outputs/comparison_h1_a2.md`.
 - 2026-03-28 12:17 CET: Re-reviewed implementation against `SPEC.md` and this TODO checklist; existing checked items are still backed by implemented code/tests, and intentionally blocked items remain unchecked.
 - 2026-03-28 12:17 CET: `uv run pytest -q` -> 30 passed (same 4 deprecation warnings: FastAPI `on_event`, `datetime.utcnow()`).
 - 2026-03-28 12:17 CET: `tesseract --version` -> `tesseract 5.5.2` (PATH OK).
@@ -104,5 +111,21 @@
 
 ## Immediate next tasks
 
-- [ ] Improve ingestion/review quality toward the 95% approved acceptance target (current: 185/526 approved, 35.17%)
-- [ ] Decide whether to de-duplicate/re-baseline the cards dataset before further acceptance validation
+- [ ] Improve ingestion/review quality toward the 95% approved acceptance target (current clean-baseline run: 114/200 approved, 57.00%)
+- [x] Decide whether to de-duplicate/re-baseline the cards dataset before further acceptance validation
+
+## Refined actionable checklist (pending)
+
+- [x] Audit card-table row inflation and duplicates (526 rows vs 200 source photos) and document root cause
+- [x] Choose dataset strategy for acceptance gating: (A) de-duplicate current DB rows, or (B) reset/rebuild from clean extraction pass
+- [x] Implement the chosen dataset cleanup path with reproducible command/script support
+- [x] Re-run extraction and complete manual review on the clean card set
+- [x] Recompute approval ratio against the acceptance criterion (>=95% approved cards)
+- [x] If approval ratio is still below target, tighten OCR/review workflow (confidence triage + correction loop) and repeat
+- [x] Re-run ranking + AI voter + compare smoke commands on the accepted dataset and confirm fresh artifacts in `outputs/`
+- [x] Update this TODO with command evidence (run IDs, output paths, and final acceptance status)
+
+### Pending blocker after cleanup/rebuild
+
+- Acceptance gate is still blocked: approval ratio is `114/200 = 57.00%` on the clean baseline after one OCR/parser tightening pass and deterministic review.
+- Root cause remains OCR extraction yield (description/score missing for many cards), not duplicate-row inflation.
