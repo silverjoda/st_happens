@@ -1,180 +1,136 @@
 initial_implementation
 
-# Implementation plan: next pending todo items (final smoke checks)
+# Implementation plan: next pending todo items (Tesseract unblock + dependent smoke checks)
 
-## Scope (tight to immediate pending work)
+## Scope
 
-This plan targets only the next unchecked items in `todos/initial_implementation.md`:
+This plan is intentionally tight to the next unchecked work in `todos/initial_implementation.md`, starting with the immediate blocker:
 
-1. App startup smoke check.
-2. Ingestion extraction smoke check and report verification.
-3. Manual review CLI smoke check.
-4. Human and AI ranking smoke checks with run-id capture.
-5. AI voter smoke check.
-6. Analysis compare smoke check and output verification.
-7. Verification-note and todo updates.
+1. Install/configure Tesseract and verify `tesseract --version`.
+2. Rerun ingestion extraction and confirm `data/processed/` artifacts (including digitization report).
+3. Rerun the currently blocked downstream smoke checks that depend on approved cards/ranking outputs.
+4. Update TODO checkboxes and verification notes with concrete command evidence.
 
-Out of scope: new feature development, refactors, and broad test rewrites.
+Out of scope: feature development, algorithm changes, schema changes, refactors, and test rewrites.
 
-## Spec + prompt alignment
+## Spec and prompt alignment
 
-- Section 11 requires each CLI/app command to run from repo root using `uv run ...`.
-- FR-1/FR-1a require extraction artifacts and manual review loop to be operational.
-- FR-5 requires ranking CLI execution for both populations.
-- FR-6 requires AI voter execution as `actor_type = ai`.
-- FR-7 requires compare report generation with required metrics/disagreement outputs in `outputs/`.
-- Prompt requires pragmatic first-iteration validation: verify critical paths end-to-end without adding unnecessary complexity.
+- FR-1 requires successful extraction from `data/raw_photos/` and digitization report output.
+- FR-1a requires review flow to start and operate on extracted cards.
+- FR-5/FR-6/FR-7 smoke checks are currently blocked by missing ingestion output and must be rerun after unblock.
+- Section 11 command surface is validated using the existing `uv run ...` entrypoints.
+- Prompt constraint (first iteration): pragmatic unblock and verification, minimal code churn.
 
 ## Detailed implementation plan
 
-## 1) Preflight and logging setup
+## 1) Environment unblock: Tesseract availability
 
 ### Goal
-Establish a repeatable smoke-check workflow and capture results in one place.
-
-### Files in focus
-- `todos/initial_implementation.md`
+Satisfy the host dependency precondition that previously caused `TesseractNotFoundError`.
 
 ### Work items
-1. Confirm dependencies are synced (`uv sync --dev` if needed).
-2. Use a single execution order that mirrors runtime dependencies: app -> ingest -> review -> ranking -> AI voter -> analysis.
-3. For each command, capture: timestamp, command, pass/fail, and key outputs (artifact paths or run IDs).
-4. Append concise findings to `## Verification notes (latest run)` after each command.
+1. Confirm package manager path for host OS (macOS expected; Homebrew default).
+2. Install Tesseract if missing (or repair PATH if already installed but unresolved).
+3. Run `tesseract --version` from repo root shell and record output headline.
+4. Capture timestamped pass/fail note in `todos/initial_implementation.md` verification notes.
 
-### Definition of done
-- Verification-note format is consistent and ready for final summary.
+### Done when
+- The command `tesseract --version` succeeds without PATH errors.
+- TODO item "Install/configure Tesseract and verify availability" can be checked.
 
-## 2) App startup smoke check
-
-### Goal
-Verify FastAPI entrypoint imports and boots without immediate runtime errors.
-
-### Command
-`uv run python -m src.app.main`
-
-### Work items
-1. Run command from repo root.
-2. Confirm startup log appears and process reaches serving state.
-3. Treat immediate import/config exceptions as failure; record traceback headline.
-4. Stop process cleanly after successful startup confirmation.
-
-### Definition of done
-- Todo item "Execute app startup smoke check and capture pass/fail result" is checkable.
-
-## 3) Ingestion extraction smoke check + artifact verification
+## 2) Ingestion smoke rerun and artifact verification
 
 ### Goal
-Verify extraction command executes and emits processed artifacts including digitization report.
+Produce extracted card outputs needed for all remaining smoke checks.
 
 ### Command
 `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
 
 ### Work items
-1. Run extraction command and capture high-level processing summary.
-2. Verify output files exist under `data/processed/`.
-3. Explicitly locate the digitization report artifact and record its path.
-4. If extraction fails due to data/environment preconditions, record exact blocker and continue remaining non-blocked checks where possible.
+1. Execute extraction and capture summary counts (processed/succeeded/failed).
+2. Verify `data/processed/` contains fresh artifacts for the run.
+3. Identify and record the digitization report path explicitly.
+4. If failures remain, record precise failure reason(s) and stop downstream checks that require approved cards.
 
-### Definition of done
-- Todo items for extraction smoke check and report-path confirmation are checkable.
+### Done when
+- Extraction command completes successfully (or has explicitly documented blocker).
+- TODO items for ingestion smoke and processed/report verification are updated accurately.
 
-## 4) Manual review CLI smoke check
+## 3) Manual review CLI smoke rerun
 
 ### Goal
-Confirm review flow starts and reaches interactive card-review entrypoint.
+Confirm review loop now starts against extracted cards (not empty-state blocked).
 
 ### Command
 `uv run python -m src.ingest.review`
 
 ### Work items
-1. Run command and verify interactive loop/menu initializes.
-2. Confirm no immediate crash on startup or first prompt render.
-3. Exit gracefully after startup verification; record whether at least one review prompt rendered.
+1. Start review command after extraction run.
+2. Verify entry into interactive review flow (prompt/menu/card loop).
+3. Exit cleanly after startup verification; record observed behavior.
 
-### Definition of done
-- Todo item for manual-review CLI interactive entry is checkable.
+### Done when
+- Manual review smoke TODO item is checked or annotated with a concrete new blocker.
 
-## 5) Ranking smoke checks (human + AI)
+## 4) Ranking smoke rerun (human + AI)
 
 ### Goal
-Verify ranking CLIs run for both populations and produce run IDs for downstream compare.
+Generate ranking runs now that approved-card precondition is expected to be met.
 
 ### Commands
 - `uv run python -m src.ranking.run --population human --algorithm bradley_terry`
 - `uv run python -m src.ranking.run --population ai --algorithm bradley_terry`
 
 ### Work items
-1. Run human ranking command and capture resulting `ranking_run.id` (or equivalent emitted identifier).
-2. Run AI ranking command and capture resulting run ID.
-3. Record normalization/output summary if printed (card count, score range, artifact hints).
-4. Add both IDs to verification notes for direct reuse in compare step.
+1. Run both commands sequentially and capture emitted run IDs.
+2. Record key output context (card count and completion status).
+3. Add run IDs to verification notes for direct use in compare command.
 
-### Definition of done
-- Todo item for human+AI ranking execution and run-id recording is checkable.
+### Done when
+- Ranking smoke TODO item is checked with concrete run IDs recorded.
 
-## 6) AI voter smoke check
-
-### Goal
-Verify AI pairwise voting runner executes its main loop with description-only inputs.
-
-### Command
-`uv run python -m src.ai_user.run --pairs 200 --model <model_name>`
-
-### Work items
-1. Choose a locally configured model value consistent with current project setup.
-2. Run command and verify session creation plus at least initial voting progression.
-3. Capture resulting AI session/run metadata identifiers if emitted.
-4. If external model credentials are missing, record blocker explicitly and mark as environment-blocked (not code-failed).
-
-### Definition of done
-- Todo item for AI voter smoke execution is checkable (pass or clearly blocked with reason).
-
-## 7) Analysis compare smoke check + output verification
+## 5) AI voter + analysis smoke rerun
 
 ### Goal
-Run final comparison and verify required output artifacts are produced under `outputs/`.
+Complete remaining end-to-end smoke checks after ingestion/ranking unblock.
 
-### Command
-`uv run python -m src.analysis.compare --human-run <id> --ai-run <id>`
+### Commands
+- `uv run python -m src.ai_user.run --pairs 200 --model heuristic_v1`
+- `uv run python -m src.analysis.compare --human-run <human_id> --ai-run <ai_id>`
 
 ### Work items
-1. Run command using latest valid human/AI run IDs from step 5.
-2. Confirm command completes and emits output file paths.
-3. Verify `outputs/` contains machine-readable and readable summary artifacts.
-4. Confirm artifacts include required metrics and disagreement lists (FR-7 contract-level check).
+1. Run AI voter command and capture session/result metadata (or explicit environment blocker).
+2. Run compare command with latest valid run IDs.
+3. Verify expected files are written to `outputs/` and include required metrics/disagreement content.
 
-### Definition of done
-- Todo items for analysis smoke execution and output verification are checkable.
+### Done when
+- AI voter and analysis smoke TODO items are checked, or blockers are documented with exact error tokens.
 
-## 8) Closeout updates
+## 6) Todo and evidence closeout
 
 ### Goal
-Synchronize todo state and leave an auditable record of what passed/failed.
-
-### Files in focus
-- `todos/initial_implementation.md`
+Leave `todos/initial_implementation.md` as the single accurate status log.
 
 ### Work items
-1. Mark each completed smoke-check todo as checked.
-2. For any failures, keep todo unchecked and add one-line remediation note in verification notes.
-3. Ensure `## Immediate next task` reflects the first remaining unchecked item (or mark complete if none remain).
+1. Check completed items immediately after each successful command.
+2. For failures, leave unchecked and add one-line remediation note in verification notes.
+3. Update `## Immediate next task` to the first remaining unchecked actionable item.
 
-### Definition of done
-- Todo file accurately reflects current state, with no ambiguity on remaining blockers.
+### Done when
+- TODO state and verification notes are consistent, current, and auditable.
 
 ## Execution order (strict)
 
-1. Preflight logging setup.
-2. App startup smoke check.
-3. Ingestion extraction + artifact verification.
-4. Manual review smoke check.
-5. Human and AI ranking smoke checks.
-6. AI voter smoke check.
-7. Analysis compare smoke check.
-8. Todo and verification-note closeout.
+1. Tesseract install/PATH verification.
+2. Ingestion extraction rerun + processed/report verification.
+3. Manual review rerun.
+4. Human and AI ranking reruns (collect run IDs).
+5. AI voter rerun.
+6. Analysis compare rerun.
+7. TODO/verification-note closeout.
 
-Completion criteria for this plan:
+Completion criteria:
 
-- Every currently pending smoke-check todo has a recorded result (pass/fail/blocked).
-- Required report/artifact paths are documented for `data/processed/` and `outputs/`.
-- Latest run IDs needed for comparison are captured in `todos/initial_implementation.md` verification notes.
+- The Tesseract dependency blocker is resolved or explicitly documented as external.
+- All currently pending smoke-check TODOs have a fresh pass/fail/blocked status.
+- Required artifact evidence is recorded for `data/processed/` and `outputs/`.

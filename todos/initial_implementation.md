@@ -63,6 +63,13 @@
 
 ## Verification notes (latest run)
 
+- 2026-03-28 12:10 CET: Audited checklist against implementation/tests; completed items remain checked and blocked smoke items remain unchecked.
+- 2026-03-28 12:10 CET: `uv run pytest -q` -> 30 passed (same 4 deprecation warnings: FastAPI `on_event`, `datetime.utcnow()`).
+- 2026-03-28 12:10 CET: `tesseract --version` -> `tesseract 5.5.2` (PATH OK).
+- 2026-03-28 12:10 CET: `uv run python -m src.app.main` reached uvicorn serving state and clean shutdown after smoke timeout (pass).
+- 2026-03-28 12:10 CET: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed` -> Processed=200, Successes=66, Failures=134; reports emitted at `data/processed/ingestion_report_20260328T110729Z.json` and `.md`.
+- 2026-03-28 12:10 CET: `uv run python -m src.ingest.review` entered interactive loop (`Card 1/200`, `review>`), then exited with `EOFError` in non-interactive environment (expected for smoke run).
+- 2026-03-28 12:10 CET: Ranking smoke commands (`human` + `ai`) still return `no_approved_cards`; AI voter still returns `insufficient_pairs_available`; analysis compare still returns `ranking_run_not_found:1`; `outputs/` remains empty.
 - 2026-03-28: Re-reviewed implementation against `SPEC.md` + this TODO; checked items remain accurate, blocked smoke items remain unchecked.
 - 2026-03-28: `uv run pytest -q` -> 30 passed (4 deprecation warnings from FastAPI `on_event` and `datetime.utcnow()` usage).
 - 2026-03-28: `uv run python -m src.app.main` reached uvicorn serving state (pass; stopped by smoke-check timeout).
