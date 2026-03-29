@@ -21,7 +21,7 @@ Behavior:
     5) Review implementation + run tests + update todo statuses
     6) Commit and push git changes
 EOF
-}
+} 
 
 if [[ $# -lt 1 ]]; then
   usage

@@ -1,0 +1,91 @@
+{
+  "session_id": 5,
+  "actor_type": "human",
+  "nickname": "tim",
+  "pair_target_count": 10,
+  "started_at": "2026-03-29T09:09:33.174293+00:00",
+  "ended_at": "2026-03-29T09:11:31.993049+00:00",
+  "comparisons": [
+    {
+      "left_card_id": 105,
+      "right_card_id": 99,
+      "chosen_card_id": 99,
+      "presented_order": 1,
+      "response_ms": 8015,
+      "created_at": "2026-03-29T09:09:41.278390+00:00"
+    },
+    {
+      "left_card_id": 143,
+      "right_card_id": 183,
+      "chosen_card_id": 143,
+      "presented_order": 2,
+      "response_ms": 10971,
+      "created_at": "2026-03-29T09:09:52.306841+00:00"
+    },
+    {
+      "left_card_id": 18,
+      "right_card_id": 96,
+      "chosen_card_id": 96,
+      "presented_order": 3,
+      "response_ms": 8000,
+      "created_at": "2026-03-29T09:10:00.365736+00:00"
+    },
+    {
+      "left_card_id": 140,
+      "right_card_id": 3,
+      "chosen_card_id": 3,
+      "presented_order": 4,
+      "response_ms": 4943,
+      "created_at": "2026-03-29T09:10:05.365062+00:00"
+    },
+    {
+      "left_card_id": 38,
+      "right_card_id": 12,
+      "chosen_card_id": 12,
+      "presented_order": 5,
+      "response_ms": 23189,
+      "created_at": "2026-03-29T09:10:28.617012+00:00"
+    },
+    {
+      "left_card_id": 159,
+      "right_card_id": 16,
+      "chosen_card_id": 16,
+      "presented_order": 6,
+      "response_ms": 3609,
+      "created_at": "2026-03-29T09:10:32.290860+00:00"
+    },
+    {
+      "left_card_id": 39,
+      "right_card_id": 176,
+      "chosen_card_id": 39,
+      "presented_order": 7,
+      "response_ms": 10600,
+      "created_at": "2026-03-29T09:10:42.957563+00:00"
+    },
+    {
+      "left_card_id": 198,
+      "right_card_id": 45,
+      "chosen_card_id": 45,
+      "presented_order": 8,
+      "response_ms": 2982,
+      "created_at": "2026-03-29T09:10:45.998689+00:00"
+    },
+    {
+      "left_card_id": 104,
+      "right_card_id": 101,
+      "chosen_card_id": 104,
+      "presented_order": 9,
+      "response_ms": 26574,
+      "created_at": "2026-03-29T09:11:12.633432+00:00"
+    },
+    {
+      "left_card_id": 197,
+      "right_card_id": 50,
+      "chosen_card_id": 50,
+      "presented_order": 10,
+      "response_ms": 19291,
+      "created_at": "2026-03-29T09:11:31.991880+00:00"
+    }
+  ],
+  "pending_pair": null
+}

@@ -167,7 +167,8 @@ Rationale:
   - official numeric score (bottom region)
 - System persists extraction result with confidence metadata into file artifacts in `data/processed/` (JSON/JSONL) as the canonical Phase-1 ingestion output.
 - System must also persist UI-safe preprocessed card images in `data/processed/display_cards/`, with one deterministic output image per source photo.
-- During extraction runs, raw photos are renamed in deterministic sorted order with score-sequence prefixes: `100`, `99.5`, `99`, ... down to `0.5` (format: `<score>_raw.jpg`).
+- During extraction runs, system supports optional renaming of raw photos in deterministic sorted order with score-sequence prefixes: `100`, `99.5`, `99`, ... down to `0.5` (format: `<score>_raw.jpg`).
+- Default extraction behavior keeps score-prefix renaming enabled, and callers can disable it for reruns using `--no-rename-score-prefixes`.
 - Preprocessed display-card image filenames must preserve the same score prefix from the corresponding raw photo (format: `<score>_processed.jpg`).
 - UI-safe preprocessing requirements:
   - robustly detect card boundaries for a dark card on light background despite realistic shadows/exposure variance,
@@ -196,12 +197,17 @@ Rationale:
 - Pair UI must render from preprocessed UI-safe images in `data/processed/display_cards/` so the yellow score box is not visible.
 - System prevents self-pairing and duplicate immediate repeats within a session.
 - Session ends when target pair count is reached or user exits.
+- When a session ends, the app returns to the session start menu so the next user can enter nickname and pair target count.
+- If no eligible new pair is available, app redirects to session start with a clear exhaustion message instead of returning a raw error.
 
 ### FR-3: Pair generation strategy
 - Every generated pair must contain two distinct cards (`left_card_id != right_card_id`).
 - Warm-up: random sampling for initial comparisons.
 - Main mode: uncertainty/adaptive sampling to maximize ranking information gain.
 - Strategy and seed are logged for reproducibility.
+- Human-session pair sampling must use fresh randomness per presentation (not deterministic session-id seeding) so new sessions do not replay the same pair sequence.
+- Human-session pair generation must present each unordered card pair at most once across all human sessions until the pair space is exhausted.
+- Within a session, pair presentation should balance card exposure and left/right placement to avoid repeatedly anchoring the same card against many opponents.
 
 ### FR-4: Persistent storage and auditability
 - All card records, sessions, comparisons, and ranking runs are stored persistently.
@@ -217,7 +223,13 @@ Rationale:
 ### FR-6: AI voter as separate actor
 - Provide runner to execute pairwise choices by an LLM/agent from descriptions only.
 - AI input excludes card image and excludes official author ranking.
+- AI card descriptions are sourced from `outputs/ocr_test_claude_results.json` (authoritative baseline), not from DB image/card rows.
+- AI voter uses the OpenAI API and requires `OPENAI_API_KEY` loaded from local `.env` (via dotenv) or process environment.
+- Prompting must instruct the model to evaluate scenarios as a human and weigh social, physical, and mental repercussions, then return `LEFT` or `RIGHT` as the worse card.
 - AI results are stored as distinct sessions with `actor_type = ai`.
+- AI session artifacts are persisted in `outputs/session_results/session_<id>.json` (or `SHIP_HAPPENS_RESULTS_DIR`) with per-comparison choices and timestamps.
+- After each `LEFT`/`RIGHT` choice, AI flow asks a follow-up for a short human-perspective reason and stores it as `reasoning` on the comparison entry in the session artifact.
+- Each comparison entry in session artifacts includes both card IDs and both card descriptions.
 - AI run config (model, prompt style, temperature, etc.) is persisted with run metadata.
 
 ### FR-7: Comparative analysis outputs
@@ -236,7 +248,7 @@ Rationale:
 - Reproducibility: deterministic mode via random seed support for pair generation and ranking runs.
 - Transparency: store configs and metadata for each run.
 - Maintainability: modular package layout with clear boundaries.
-- Local-first operation: full system runs locally without cloud dependencies.
+- Local-first operation: ingestion, human voting UI, ranking, and analysis run locally; AI voting requires outbound OpenAI API access.
 - Performance target (initial): responsive UI for pair voting and ranking recomputation within practical local times on ~200 cards.
 - Environment consistency: all dependencies and project metadata are managed via `pyproject.toml`, installed/synced with `uv`.
 
@@ -250,6 +262,7 @@ Expected commands/scripts (exact filenames may evolve, behavior is required):
 
 - Ingestion
   - `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed`
+  - Optional rerun without renaming: `uv run python -m src.ingest.run_extract --input data/raw_photos --out data/processed --no-rename-score-prefixes`
   - `uv run python -m src.ingest.review` (manual correction/approval flow)
 
 - App
@@ -261,6 +274,7 @@ Expected commands/scripts (exact filenames may evolve, behavior is required):
 
 - AI voter
   - `uv run python -m src.ai_user.run --pairs 200 --model <model_name>`
+  - Requires `OPENAI_API_KEY` in environment or `.env` at project root.
 
 - Analysis
   - `uv run python -m src.analysis.compare --human-run <id> --ai-run <id>`

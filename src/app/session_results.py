@@ -16,9 +16,12 @@ from src.common.settings import PROJECT_ROOT
 class SessionComparison:
     left_card_id: int
     right_card_id: int
+    left_card_description: str | None
+    right_card_description: str | None
     chosen_card_id: int
     presented_order: int
     response_ms: int | None
+    reasoning: str | None
     created_at: str
 
 
@@ -31,6 +34,16 @@ class SessionResult:
     started_at: str
     ended_at: str | None
     comparisons: list[SessionComparison]
+    pending_pair: SessionPendingPair | None
+
+
+@dataclass(slots=True)
+class SessionPendingPair:
+    left_card_id: int
+    right_card_id: int
+    presented_order: int
+    seed: int
+    created_at: str
 
 
 _SESSION_FILENAME_RE = re.compile(r"^session_(\d+)\.json$")
@@ -78,13 +91,37 @@ def _from_dict(payload: dict[str, object]) -> SessionResult:
                 SessionComparison(
                     left_card_id=int(row["left_card_id"]),
                     right_card_id=int(row["right_card_id"]),
+                    left_card_description=(
+                        str(row["left_card_description"])
+                        if row.get("left_card_description") is not None
+                        else None
+                    ),
+                    right_card_description=(
+                        str(row["right_card_description"])
+                        if row.get("right_card_description") is not None
+                        else None
+                    ),
                     chosen_card_id=int(row["chosen_card_id"]),
                     presented_order=int(row["presented_order"]),
                     response_ms=(
                         int(row["response_ms"]) if row.get("response_ms") is not None else None
                     ),
+                    reasoning=(str(row["reasoning"]) if row.get("reasoning") is not None else None),
                     created_at=str(row["created_at"]),
                 )
+            )
+
+    pending_payload = payload.get("pending_pair")
+    pending_pair: SessionPendingPair | None = None
+    if isinstance(pending_payload, dict):
+        seed_value = pending_payload.get("seed")
+        if seed_value is not None:
+            pending_pair = SessionPendingPair(
+                left_card_id=int(pending_payload["left_card_id"]),
+                right_card_id=int(pending_payload["right_card_id"]),
+                presented_order=int(pending_payload["presented_order"]),
+                seed=int(seed_value),
+                created_at=str(pending_payload["created_at"]),
             )
 
     return SessionResult(
@@ -95,6 +132,7 @@ def _from_dict(payload: dict[str, object]) -> SessionResult:
         started_at=str(payload["started_at"]),
         ended_at=(str(payload["ended_at"]) if payload.get("ended_at") is not None else None),
         comparisons=comparisons,
+        pending_pair=pending_pair,
     )
 
 
@@ -116,14 +154,36 @@ def load_session_result(session_id: int) -> SessionResult | None:
 
 
 def create_human_session_result(nickname: str | None, pair_target_count: int) -> SessionResult:
+    return _create_session_result(
+        actor_type="human",
+        nickname=nickname,
+        pair_target_count=pair_target_count,
+    )
+
+
+def create_ai_session_result(nickname: str | None, pair_target_count: int) -> SessionResult:
+    return _create_session_result(
+        actor_type="ai",
+        nickname=nickname,
+        pair_target_count=pair_target_count,
+    )
+
+
+def _create_session_result(
+    *,
+    actor_type: str,
+    nickname: str | None,
+    pair_target_count: int,
+) -> SessionResult:
     result = SessionResult(
         session_id=_next_session_id(),
-        actor_type="human",
+        actor_type=actor_type,
         nickname=nickname,
         pair_target_count=pair_target_count,
         started_at=_utc_now_iso(),
         ended_at=None,
         comparisons=[],
+        pending_pair=None,
     )
     save_session_result(result)
     return result
@@ -160,9 +220,12 @@ def append_comparison(
     *,
     left_card_id: int,
     right_card_id: int,
+    left_card_description: str | None = None,
+    right_card_description: str | None = None,
     chosen_card_id: int,
     presented_order: int,
     response_ms: int | None,
+    reasoning: str | None = None,
 ) -> SessionResult:
     for row in result.comparisons:
         if row.presented_order == presented_order:
@@ -172,11 +235,63 @@ def append_comparison(
         SessionComparison(
             left_card_id=left_card_id,
             right_card_id=right_card_id,
+            left_card_description=left_card_description,
+            right_card_description=right_card_description,
             chosen_card_id=chosen_card_id,
             presented_order=presented_order,
             response_ms=response_ms,
+            reasoning=reasoning,
             created_at=_utc_now_iso(),
         )
     )
+    result.pending_pair = None
     save_session_result(result)
     return result
+
+
+def set_pending_pair(
+    result: SessionResult,
+    *,
+    left_card_id: int,
+    right_card_id: int,
+    presented_order: int,
+    seed: int,
+) -> SessionResult:
+    result.pending_pair = SessionPendingPair(
+        left_card_id=left_card_id,
+        right_card_id=right_card_id,
+        presented_order=presented_order,
+        seed=seed,
+        created_at=_utc_now_iso(),
+    )
+    save_session_result(result)
+    return result
+
+
+def pending_pair_for_order(
+    result: SessionResult, presented_order: int
+) -> tuple[int, int, int] | None:
+    pending = result.pending_pair
+    if pending is None or pending.presented_order != presented_order:
+        return None
+    return pending.left_card_id, pending.right_card_id, pending.seed
+
+
+def all_used_human_pair_keys() -> set[str]:
+    used: set[str] = set()
+    for path in ensure_results_directory().glob("session_*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("actor_type") != "human":
+            continue
+        session = _from_dict(payload)
+        for row in session.comparisons:
+            low, high = sorted((row.left_card_id, row.right_card_id))
+            used.add(f"{low}:{high}")
+        if session.pending_pair is not None:
+            low, high = sorted(
+                (session.pending_pair.left_card_id, session.pending_pair.right_card_id)
+            )
+            used.add(f"{low}:{high}")
+    return used

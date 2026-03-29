@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from src.common.settings import display_card_path_for_source
-from src.ingest.run_extract import _rename_images_with_score_prefixes, _resolve_worker_count
+from src.ingest.run_extract import (
+    _prepare_images_for_extraction,
+    _rename_images_with_score_prefixes,
+    _resolve_worker_count,
+)
 
 
 def test_rename_images_with_score_prefixes_uses_sorted_order(tmp_path: Path) -> None:
@@ -19,6 +23,19 @@ def test_rename_images_with_score_prefixes_uses_sorted_order(tmp_path: Path) -> 
     assert [path.name for path in renamed] == ["100_raw.jpg", "99.5_raw.png"]
     assert renamed[0].exists()
     assert renamed[1].exists()
+
+
+def test_prepare_images_for_extraction_skips_renaming_when_disabled(tmp_path: Path) -> None:
+    photo_a = tmp_path / "a.jpg"
+    photo_b = tmp_path / "b.png"
+    photo_a.write_bytes(b"a")
+    photo_b.write_bytes(b"b")
+
+    prepared = _prepare_images_for_extraction([photo_a, photo_b], rename_score_prefixes=False)
+
+    assert [path.name for path in prepared] == ["a.jpg", "b.png"]
+    assert photo_a.exists()
+    assert photo_b.exists()
 
 
 def test_display_card_path_keeps_score_prefix_when_available(tmp_path: Path) -> None:

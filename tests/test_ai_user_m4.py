@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from src.ai_user.run import run_ai_votes
+from src.app.session_results import load_session_result
 from src.common.db import create_schema, session_scope
 from src.common.models import AIRunRecord, Card, Comparison, SessionRecord
 from src.ranking.data import load_comparisons_for_population
@@ -13,6 +14,10 @@ from src.ranking.data import load_comparisons_for_population
 
 def _db_url_for_tmp(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'test_ai_user_m4.db'}"
+
+
+def _results_dir_for_tmp(tmp_path: Path) -> str:
+    return str(tmp_path / "session_results")
 
 
 def _seed_approved_cards(count: int) -> list[int]:
@@ -35,6 +40,13 @@ def test_run_ai_votes_persists_session_comparisons_and_metadata(
     monkeypatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("src.ai_user.run._pick_worse_side_with_openai", lambda **_: "left")
+    monkeypatch.setattr(
+        "src.ai_user.run._request_reasoning_with_openai",
+        lambda **_: "I chose LEFT because it creates broader long-term harm.",
+    )
     create_schema()
     _seed_approved_cards(5)
 
@@ -75,10 +87,30 @@ def test_run_ai_votes_persists_session_comparisons_and_metadata(
         assert metadata["temperature"] == 0.0
         assert metadata["seed"] == 13
         assert metadata["session_id"] == session_id
+        assert metadata["provider"] == "openai"
+        assert isinstance(metadata["file_session_id"], int)
+
+    file_record = load_session_result(1)
+    assert file_record is not None
+    assert file_record.actor_type == "ai"
+    assert file_record.pair_target_count == 4
+    assert file_record.ended_at is not None
+    assert len(file_record.comparisons) == 4
+    assert all(
+        row.reasoning == "I chose LEFT because it creates broader long-term harm."
+        for row in file_record.comparisons
+    )
 
 
 def test_actor_population_filtering_separates_human_and_ai(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("src.ai_user.run._pick_worse_side_with_openai", lambda **_: "left")
+    monkeypatch.setattr(
+        "src.ai_user.run._request_reasoning_with_openai",
+        lambda **_: "I chose LEFT because it creates broader long-term harm.",
+    )
     create_schema()
     card_ids = _seed_approved_cards(3)
 

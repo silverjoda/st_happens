@@ -1,0 +1,121 @@
+{
+  "session_id": 14,
+  "actor_type": "human",
+  "nickname": null,
+  "pair_target_count": 10,
+  "started_at": "2026-03-29T10:05:11.063997+00:00",
+  "ended_at": "2026-03-29T10:06:38.962439+00:00",
+  "comparisons": [
+    {
+      "left_card_id": 147,
+      "right_card_id": 168,
+      "left_card_description": "Šlápnutí\nna rezavej hřebík\np",
+      "right_card_description": "Ucpání záchodu\nna svatební\nhostine",
+      "chosen_card_id": 147,
+      "presented_order": 1,
+      "response_ms": 5953,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:05:17.111529+00:00"
+    },
+    {
+      "left_card_id": 134,
+      "right_card_id": 113,
+      "left_card_description": "Uvolnění ucpanýho\nzáchodu\nholýma rukama",
+      "right_card_description": "Vlezení pavouka\ndo ucha",
+      "chosen_card_id": 113,
+      "presented_order": 2,
+      "response_ms": 6142,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:05:23.320468+00:00"
+    },
+    {
+      "left_card_id": 115,
+      "right_card_id": 86,
+      "left_card_description": "Filcky",
+      "right_card_description": "Pokousání netopýrem\n©",
+      "chosen_card_id": 86,
+      "presented_order": 3,
+      "response_ms": 8729,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:05:32.111138+00:00"
+    },
+    {
+      "left_card_id": 187,
+      "right_card_id": 19,
+      "left_card_description": "Krádež oběda\nkolegou\n?",
+      "right_card_description": "Totálně dosraná\na\nplastika obličeje\n\nV. —",
+      "chosen_card_id": 19,
+      "presented_order": 4,
+      "response_ms": 8827,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:05:41.003427+00:00"
+    },
+    {
+      "left_card_id": 38,
+      "right_card_id": 23,
+      "left_card_description": "Rozvod rodičů",
+      "right_card_description": "Ukousnutí\njazyka",
+      "chosen_card_id": 23,
+      "presented_order": 5,
+      "response_ms": 3477,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:05:44.547061+00:00"
+    },
+    {
+      "left_card_id": 162,
+      "right_card_id": 144,
+      "left_card_description": "Tvůj pes zakou\nsousedova kočka\n(AVR",
+      "right_card_description": "Čištění zubních kanálků",
+      "chosen_card_id": 162,
+      "presented_order": 6,
+      "response_ms": 16297,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:06:00.905847+00:00"
+    },
+    {
+      "left_card_id": 120,
+      "right_card_id": 100,
+      "left_card_description": "Ztráta peněženky",
+      "right_card_description": "Zjištění, že si tvoje\nmáma v těhotenství\ndopřávala LSD",
+      "chosen_card_id": 120,
+      "presented_order": 7,
+      "response_ms": 5245,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:06:06.212132+00:00"
+    },
+    {
+      "left_card_id": 183,
+      "right_card_id": 37,
+      "left_card_description": "Čtyřhodinová\nopera\nNa! ja",
+      "right_card_description": "Partner(ka)\nšuká člověka po\ntvy levici",
+      "chosen_card_id": 37,
+      "presented_order": 8,
+      "response_ms": 7753,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:06:14.029319+00:00"
+    },
+    {
+      "left_card_id": 103,
+      "right_card_id": 127,
+      "left_card_description": "Koňskej kopanec\ndo rozkroku",
+      "right_card_description": "tvůj deníček",
+      "chosen_card_id": 103,
+      "presented_order": 9,
+      "response_ms": 17770,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:06:31.862443+00:00"
+    },
+    {
+      "left_card_id": 125,
+      "right_card_id": 36,
+      "left_card_description": "Tříska\nV genitálu\n7 „2%",
+      "right_card_description": "Pubertální\ndcera je\ntehotná",
+      "chosen_card_id": 36,
+      "presented_order": 10,
+      "response_ms": 7032,
+      "reasoning": null,
+      "created_at": "2026-03-29T10:06:38.960517+00:00"
+    }
+  ],
+  "pending_pair": null
+}

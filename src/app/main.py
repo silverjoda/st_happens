@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.app.pairing import PairSelection, load_approved_cards, select_next_pair
 from src.app.session_results import (
+    all_used_human_pair_keys,
     SessionResult,
     append_comparison,
     comparison_count,
@@ -21,6 +22,8 @@ from src.app.session_results import (
     get_pair_by_order,
     last_pair_key,
     load_session_result,
+    pending_pair_for_order,
+    set_pending_pair,
     set_session_ended,
 )
 from src.common.settings import ensure_runtime_directories
@@ -28,6 +31,7 @@ from src.common.settings import ensure_runtime_directories
 DEFAULT_PAIR_TARGET = 20
 MIN_PAIR_TARGET = 1
 MAX_PAIR_TARGET = 500
+SESSION_START_PATH = "/sessions/start"
 
 _template_dir = Path(__file__).resolve().parent / "templates"
 templates = Jinja2Templates(directory=str(_template_dir))
@@ -64,6 +68,7 @@ def _render_session_start(
     nickname: str = "",
     pair_target_count: str = str(DEFAULT_PAIR_TARGET),
     error: str | None = None,
+    notice: str | None = None,
 ):
     return templates.TemplateResponse(
         request,
@@ -72,8 +77,19 @@ def _render_session_start(
             "nickname": nickname,
             "pair_target_count": pair_target_count,
             "error": error,
+            "notice": notice,
         },
     )
+
+
+def _start_notice_message(notice_code: str | None) -> str | None:
+    messages = {
+        "pair_selection_exhausted": "All available unique pairs have been used. Add more cards or reset pair history to continue.",
+        "not_enough_approved_cards": "Need at least two approved cards before starting a session.",
+    }
+    if notice_code is None:
+        return None
+    return messages.get(notice_code)
 
 
 def _get_human_session_or_404(session_id: int) -> SessionResult:
@@ -93,7 +109,11 @@ def _set_session_ended(session_id: int) -> None:
     set_session_ended(record)
 
 
-def _current_pair_for_session(session_id: int) -> tuple[SessionResult, PairSelection, int]:
+def _current_pair_for_session(
+    session_id: int,
+    *,
+    selection_seed_base: int | None = None,
+) -> tuple[SessionResult, PairSelection, int]:
     session_record = _get_human_session_or_404(session_id)
     if session_record.ended_at is not None:
         raise HTTPException(status_code=409, detail="session_already_completed")
@@ -103,16 +123,49 @@ def _current_pair_for_session(session_id: int) -> tuple[SessionResult, PairSelec
         _set_session_ended(session_id)
         raise HTTPException(status_code=409, detail="session_already_completed")
 
+    pending_pair = pending_pair_for_order(session_record, presented_order)
+    if pending_pair is not None:
+        left_card_id, right_card_id, pair_seed = pending_pair
+        cards = load_approved_cards()
+        card_lookup = {card.id: card for card in cards}
+        left_card = card_lookup.get(left_card_id)
+        right_card = card_lookup.get(right_card_id)
+        if left_card is not None and right_card is not None:
+            return (
+                session_record,
+                PairSelection(
+                    left_card=left_card,
+                    right_card=right_card,
+                    mode="warmup_random",
+                    seed=pair_seed,
+                ),
+                presented_order,
+            )
+
+    excluded_pair_keys = all_used_human_pair_keys()
     try:
         pair = select_next_pair(
             session_id=session_id,
             presented_order=presented_order,
             blocked_pair_key=last_pair_key(session_record),
+            selection_seed_base=selection_seed_base,
+            excluded_pair_keys=excluded_pair_keys,
+            session_pair_history=[
+                (row.left_card_id, row.right_card_id) for row in session_record.comparisons
+            ],
         )
     except ValueError as exc:
         if str(exc) in {"not_enough_approved_cards", "pair_selection_exhausted"}:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         raise
+
+    set_pending_pair(
+        session_record,
+        left_card_id=pair.left_card.id,
+        right_card_id=pair.right_card.id,
+        presented_order=presented_order,
+        seed=pair.seed,
+    )
 
     logger.info(
         "pair_selected session_id=%s presented_order=%s mode=%s seed=%s",
@@ -137,12 +190,13 @@ def on_startup() -> None:
 
 @app.get("/")
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/sessions/start", status_code=303)
+    return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
 
 @app.get("/sessions/start")
 async def session_start(request: Request):
-    return _render_session_start(request)
+    notice_code = request.query_params.get("notice")
+    return _render_session_start(request, notice=_start_notice_message(notice_code))
 
 
 @app.post("/sessions")
@@ -195,14 +249,25 @@ async def card_image(card_id: int):
 async def session_pair(request: Request, session_id: int):
     session_record = _get_human_session_or_404(session_id)
     if session_record.ended_at is not None:
-        return RedirectResponse(url=f"/sessions/{session_id}/complete", status_code=303)
+        return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
     current_count = _comparison_count(session_id)
     if current_count >= session_record.pair_target_count:
         _set_session_ended(session_id)
-        return RedirectResponse(url=f"/sessions/{session_id}/complete", status_code=303)
+        return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
-    _, pair, presented_order = _current_pair_for_session(session_id)
+    try:
+        _, pair, presented_order = _current_pair_for_session(session_id)
+    except HTTPException as exc:
+        if exc.status_code == 400 and str(exc.detail) in {
+            "pair_selection_exhausted",
+            "not_enough_approved_cards",
+        }:
+            return RedirectResponse(
+                url=f"{SESSION_START_PATH}?notice={exc.detail}",
+                status_code=303,
+            )
+        raise
     return templates.TemplateResponse(
         request,
         "pair.html",
@@ -261,12 +326,12 @@ def _parse_required_positive_int(raw_value: str | None, *, field_name: str) -> i
 async def session_vote(request: Request, session_id: int):
     session_record = _get_human_session_or_404(session_id)
     if session_record.ended_at is not None:
-        return RedirectResponse(url=f"/sessions/{session_id}/complete", status_code=303)
+        return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
     current_count = _comparison_count(session_id)
     if current_count >= session_record.pair_target_count:
         _set_session_ended(session_id)
-        return RedirectResponse(url=f"/sessions/{session_id}/complete", status_code=303)
+        return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
     form = await request.form()
     left_card_id = _parse_required_positive_int(form.get("left_card_id"), field_name="left_card_id")
@@ -279,6 +344,7 @@ async def session_vote(request: Request, session_id: int):
     posted_order = _parse_required_positive_int(
         form.get("presented_order"), field_name="presented_order"
     )
+    pair_seed = _parse_required_positive_int(form.get("pair_seed"), field_name="pair_seed")
     response_ms = _parse_response_ms(form.get("response_ms"))
 
     if posted_order > session_record.pair_target_count:
@@ -286,8 +352,14 @@ async def session_vote(request: Request, session_id: int):
 
     expected = _load_pair_by_order(session_id, posted_order)
     if expected is None:
-        _, expected_pair, presented_order = _current_pair_for_session(session_id)
-        expected_pair_set = {expected_pair.left_card.id, expected_pair.right_card.id}
+        pending_pair = pending_pair_for_order(session_record, posted_order)
+        if pending_pair is None:
+            raise HTTPException(status_code=400, detail="stale_or_invalid_pair")
+        pending_left_card_id, pending_right_card_id, pending_seed = pending_pair
+        if pair_seed != pending_seed:
+            raise HTTPException(status_code=400, detail="stale_or_invalid_pair")
+        presented_order = posted_order
+        expected_pair_set = {pending_left_card_id, pending_right_card_id}
     else:
         presented_order = posted_order
         expected_pair_set = {expected[0], expected[1]}
@@ -300,11 +372,21 @@ async def session_vote(request: Request, session_id: int):
         raise HTTPException(status_code=400, detail="chosen_card_not_in_pair")
 
     session_record = _get_human_session_or_404(session_id)
+    cards = load_approved_cards()
+    card_lookup = {card.id: card for card in cards}
+    left_description = (
+        card_lookup.get(left_card_id).description_text if left_card_id in card_lookup else None
+    )
+    right_description = (
+        card_lookup.get(right_card_id).description_text if right_card_id in card_lookup else None
+    )
     try:
         append_comparison(
             session_record,
             left_card_id=left_card_id,
             right_card_id=right_card_id,
+            left_card_description=left_description,
+            right_card_description=right_description,
             chosen_card_id=chosen_card_id,
             presented_order=presented_order,
             response_ms=response_ms,
@@ -317,7 +399,7 @@ async def session_vote(request: Request, session_id: int):
     new_count = current_count + 1
     if new_count >= session_record.pair_target_count:
         _set_session_ended(session_id)
-        return RedirectResponse(url=f"/sessions/{session_id}/complete", status_code=303)
+        return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
     return RedirectResponse(url=f"/sessions/{session_id}/pair", status_code=303)
 
@@ -333,16 +415,7 @@ async def session_complete(request: Request, session_id: int):
 
     if session_record.ended_at is None:
         return RedirectResponse(url=f"/sessions/{session_id}/pair", status_code=303)
-
-    return templates.TemplateResponse(
-        request,
-        "complete.html",
-        {
-            "session_id": session_id,
-            "vote_count": vote_count,
-            "pair_target_count": session_record.pair_target_count,
-        },
-    )
+    return RedirectResponse(url=SESSION_START_PATH, status_code=303)
 
 
 if __name__ == "__main__":

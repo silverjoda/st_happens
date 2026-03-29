@@ -385,7 +385,177 @@ def test_pair_selection_avoids_immediate_duplicate_pair_key(monkeypatch, tmp_pat
     assert {current.left_card.id, current.right_card.id}.issubset(set(card_ids))
 
 
-def test_get_pair_redirects_to_complete_when_target_met(monkeypatch, tmp_path: Path) -> None:
+def test_pair_selection_uses_fresh_random_seed_per_selection(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    display_dir = tmp_path / "data" / "processed" / "display_cards"
+    display_dir.mkdir(parents=True, exist_ok=True)
+    for score_prefix in ("100", "99.5", "99"):
+        (display_dir / f"{score_prefix}_processed.jpg").write_bytes(b"fake")
+
+    queued_seeds = [111, 222]
+
+    class _FakeSystemRandom:
+        def randrange(self, start: int, stop: int) -> int:
+            assert start == 1
+            assert stop == 2**63
+            return queued_seeds.pop(0)
+
+    monkeypatch.setattr("src.app.pairing.random.SystemRandom", _FakeSystemRandom)
+
+    first = select_next_pair(session_id=1, presented_order=1)
+    blocked = canonical_pair_key(first.left_card.id, first.right_card.id)
+    second = select_next_pair(session_id=1, presented_order=2, blocked_pair_key=blocked)
+
+    assert first.seed == 111
+    assert second.seed == 222
+
+
+def test_pair_selection_balances_card_exposure_within_session(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    display_dir = tmp_path / "data" / "processed" / "display_cards"
+    display_dir.mkdir(parents=True, exist_ok=True)
+    for score_prefix in ("100", "99.5", "99", "98.5", "98", "97.5"):
+        (display_dir / f"{score_prefix}_processed.jpg").write_bytes(b"fake")
+
+    used_pair_keys: set[str] = set()
+    history: list[tuple[int, int]] = []
+    last_key: str | None = None
+
+    for presented_order in range(1, 11):
+        selected = select_next_pair(
+            session_id=1,
+            presented_order=presented_order,
+            blocked_pair_key=last_key,
+            selection_seed_base=9001,
+            excluded_pair_keys=used_pair_keys,
+            session_pair_history=history,
+        )
+        key = canonical_pair_key(selected.left_card.id, selected.right_card.id)
+        used_pair_keys.add(key)
+        history.append((selected.left_card.id, selected.right_card.id))
+        last_key = key
+
+    total_counts: dict[int, int] = {}
+    left_counts: dict[int, int] = {}
+    right_counts: dict[int, int] = {}
+    for left_id, right_id in history:
+        total_counts[left_id] = total_counts.get(left_id, 0) + 1
+        total_counts[right_id] = total_counts.get(right_id, 0) + 1
+        left_counts[left_id] = left_counts.get(left_id, 0) + 1
+        right_counts[right_id] = right_counts.get(right_id, 0) + 1
+
+    assert len(used_pair_keys) == len(history)
+    assert max(total_counts.values()) <= 4
+    for card_id, left_count in left_counts.items():
+        right_count = right_counts.get(card_id, 0)
+        assert abs(left_count - right_count) <= 2
+
+
+def test_second_session_gets_unused_pair(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    display_dir = tmp_path / "data" / "processed" / "display_cards"
+    display_dir.mkdir(parents=True, exist_ok=True)
+    for score_prefix in ("100", "99.5", "99"):
+        (display_dir / f"{score_prefix}_processed.jpg").write_bytes(b"fake")
+
+    with TestClient(app) as client:
+        first_create = client.post(
+            "/sessions",
+            data={"nickname": "", "pair_target_count": "1"},
+            follow_redirects=False,
+        )
+        first_session_id = int(first_create.headers["location"].split("/")[2])
+        first_pair_page = client.get(f"/sessions/{first_session_id}/pair")
+        first_left = _extract_hidden_value(first_pair_page.text, "left_card_id")
+        first_right = _extract_hidden_value(first_pair_page.text, "right_card_id")
+        first_order = _extract_hidden_value(first_pair_page.text, "presented_order")
+        first_seed = _extract_hidden_value(first_pair_page.text, "pair_seed")
+        first_pair_key = canonical_pair_key(first_left, first_right)
+
+        first_vote = client.post(
+            f"/sessions/{first_session_id}/vote",
+            data={
+                "left_card_id": str(first_left),
+                "right_card_id": str(first_right),
+                "chosen_card_id": str(first_left),
+                "presented_order": str(first_order),
+                "pair_seed": str(first_seed),
+            },
+            follow_redirects=False,
+        )
+        assert first_vote.status_code == 303
+
+        second_create = client.post(
+            "/sessions",
+            data={"nickname": "", "pair_target_count": "1"},
+            follow_redirects=False,
+        )
+        second_session_id = int(second_create.headers["location"].split("/")[2])
+        second_pair_page = client.get(f"/sessions/{second_session_id}/pair")
+        second_left = _extract_hidden_value(second_pair_page.text, "left_card_id")
+        second_right = _extract_hidden_value(second_pair_page.text, "right_card_id")
+        second_pair_key = canonical_pair_key(second_left, second_right)
+
+    assert first_pair_key != second_pair_key
+
+
+def test_pair_route_redirects_to_start_notice_when_pair_space_exhausted(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
+    monkeypatch.setattr("src.common.settings.PROJECT_ROOT", tmp_path)
+
+    display_dir = tmp_path / "data" / "processed" / "display_cards"
+    display_dir.mkdir(parents=True, exist_ok=True)
+    for score_prefix in ("100", "99.5"):
+        (display_dir / f"{score_prefix}_processed.jpg").write_bytes(b"fake")
+
+    with TestClient(app) as client:
+        first_create = client.post(
+            "/sessions",
+            data={"nickname": "", "pair_target_count": "1"},
+            follow_redirects=False,
+        )
+        first_session_id = int(first_create.headers["location"].split("/")[2])
+        first_pair_page = client.get(f"/sessions/{first_session_id}/pair")
+        first_left = _extract_hidden_value(first_pair_page.text, "left_card_id")
+        first_right = _extract_hidden_value(first_pair_page.text, "right_card_id")
+        first_order = _extract_hidden_value(first_pair_page.text, "presented_order")
+        first_seed = _extract_hidden_value(first_pair_page.text, "pair_seed")
+        first_vote = client.post(
+            f"/sessions/{first_session_id}/vote",
+            data={
+                "left_card_id": str(first_left),
+                "right_card_id": str(first_right),
+                "chosen_card_id": str(first_left),
+                "presented_order": str(first_order),
+                "pair_seed": str(first_seed),
+            },
+            follow_redirects=False,
+        )
+        assert first_vote.status_code == 303
+
+        second_create = client.post(
+            "/sessions",
+            data={"nickname": "", "pair_target_count": "1"},
+            follow_redirects=False,
+        )
+        second_session_id = int(second_create.headers["location"].split("/")[2])
+
+        exhausted = client.get(f"/sessions/{second_session_id}/pair", follow_redirects=False)
+        assert exhausted.status_code == 303
+        assert exhausted.headers["location"] == "/sessions/start?notice=pair_selection_exhausted"
+
+        start_page = client.get(exhausted.headers["location"])
+
+    assert "All available unique pairs have been used." in start_page.text
+
+
+def test_get_pair_redirects_to_start_when_target_met(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SHIP_HAPPENS_DB_URL", _db_url_for_tmp(tmp_path))
     monkeypatch.setenv("SHIP_HAPPENS_RESULTS_DIR", _results_dir_for_tmp(tmp_path))
 
@@ -403,6 +573,7 @@ def test_get_pair_redirects_to_complete_when_target_met(monkeypatch, tmp_path: P
         left_card_id = _extract_hidden_value(first_pair.text, "left_card_id")
         right_card_id = _extract_hidden_value(first_pair.text, "right_card_id")
         presented_order = _extract_hidden_value(first_pair.text, "presented_order")
+        pair_seed = _extract_hidden_value(first_pair.text, "pair_seed")
 
         vote = client.post(
             f"/sessions/{session_id}/vote",
@@ -411,16 +582,20 @@ def test_get_pair_redirects_to_complete_when_target_met(monkeypatch, tmp_path: P
                 "right_card_id": str(right_card_id),
                 "chosen_card_id": str(left_card_id),
                 "presented_order": str(presented_order),
+                "pair_seed": str(pair_seed),
             },
             follow_redirects=False,
         )
         assert vote.status_code == 303
-        assert vote.headers["location"] == f"/sessions/{session_id}/complete"
+        assert vote.headers["location"] == "/sessions/start"
 
+        complete_page = client.get(f"/sessions/{session_id}/complete", follow_redirects=False)
         after_complete = client.get(f"/sessions/{session_id}/pair", follow_redirects=False)
 
+    assert complete_page.status_code == 303
+    assert complete_page.headers["location"] == "/sessions/start"
     assert after_complete.status_code == 303
-    assert after_complete.headers["location"] == f"/sessions/{session_id}/complete"
+    assert after_complete.headers["location"] == "/sessions/start"
 
 
 def test_post_vote_persists_required_fields(monkeypatch, tmp_path: Path) -> None:
@@ -441,6 +616,7 @@ def test_post_vote_persists_required_fields(monkeypatch, tmp_path: Path) -> None
         left_card_id = _extract_hidden_value(pair_page.text, "left_card_id")
         right_card_id = _extract_hidden_value(pair_page.text, "right_card_id")
         presented_order = _extract_hidden_value(pair_page.text, "presented_order")
+        pair_seed = _extract_hidden_value(pair_page.text, "pair_seed")
 
         response = client.post(
             f"/sessions/{session_id}/vote",
@@ -449,6 +625,7 @@ def test_post_vote_persists_required_fields(monkeypatch, tmp_path: Path) -> None
                 "right_card_id": str(right_card_id),
                 "chosen_card_id": str(right_card_id),
                 "presented_order": str(presented_order),
+                "pair_seed": str(pair_seed),
                 "response_ms": "321",
             },
             follow_redirects=False,
@@ -487,6 +664,7 @@ def test_invalid_chosen_card_rejected_without_write(monkeypatch, tmp_path: Path)
         left_card_id = _extract_hidden_value(pair_page.text, "left_card_id")
         right_card_id = _extract_hidden_value(pair_page.text, "right_card_id")
         presented_order = _extract_hidden_value(pair_page.text, "presented_order")
+        pair_seed = _extract_hidden_value(pair_page.text, "pair_seed")
 
         response = client.post(
             f"/sessions/{session_id}/vote",
@@ -495,6 +673,7 @@ def test_invalid_chosen_card_rejected_without_write(monkeypatch, tmp_path: Path)
                 "right_card_id": str(right_card_id),
                 "chosen_card_id": str(outside_card_id),
                 "presented_order": str(presented_order),
+                "pair_seed": str(pair_seed),
             },
             follow_redirects=False,
         )
@@ -524,6 +703,7 @@ def test_session_sets_ended_at_on_final_vote(monkeypatch, tmp_path: Path) -> Non
         left_card_id = _extract_hidden_value(pair_page.text, "left_card_id")
         right_card_id = _extract_hidden_value(pair_page.text, "right_card_id")
         presented_order = _extract_hidden_value(pair_page.text, "presented_order")
+        pair_seed = _extract_hidden_value(pair_page.text, "pair_seed")
 
         response = client.post(
             f"/sessions/{session_id}/vote",
@@ -532,12 +712,13 @@ def test_session_sets_ended_at_on_final_vote(monkeypatch, tmp_path: Path) -> Non
                 "right_card_id": str(right_card_id),
                 "chosen_card_id": str(left_card_id),
                 "presented_order": str(presented_order),
+                "pair_seed": str(pair_seed),
             },
             follow_redirects=False,
         )
 
     assert response.status_code == 303
-    assert response.headers["location"] == f"/sessions/{session_id}/complete"
+    assert response.headers["location"] == "/sessions/start"
 
     saved = load_session_result(session_id)
     assert saved is not None

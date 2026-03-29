@@ -4,6 +4,12 @@
 
 {% block content %}
   <p>Start a human voting session. Leave nickname blank to stay anonymous.</p>
+  {% if notice %}
+    <p>{{ notice }}</p>
+  {% endif %}
+  {% if error %}
+    <p>{{ error }}</p>
+  {% endif %}
   <form method="post" action="/sessions">
     <label for="nickname">
       Nickname (optional)

@@ -39,6 +39,15 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_WORKERS,
         help="Number of worker processes for extraction (default: 1, use 0 for CPU count)",
     )
+    parser.add_argument(
+        "--rename-score-prefixes",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Rename raw images to score-prefixed filenames before extraction "
+            "(use --no-rename-score-prefixes to keep existing filenames)"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -126,6 +135,12 @@ def _rename_images_with_score_prefixes(images: list[Path]) -> list[Path]:
     return planned_paths
 
 
+def _prepare_images_for_extraction(images: list[Path], rename_score_prefixes: bool) -> list[Path]:
+    if not rename_score_prefixes:
+        return images
+    return _rename_images_with_score_prefixes(images)
+
+
 def _build_ocr_adapter() -> OCRWithFallback:
     primary = TesseractOCR()
     try:
@@ -189,8 +204,11 @@ def main() -> None:
     display_dir.mkdir(parents=True, exist_ok=True)
 
     all_images = _list_input_images(input_dir=input_dir, limit=None, seed=None)
-    renamed_images = _rename_images_with_score_prefixes(all_images)
-    images = _select_images(renamed_images, limit=args.limit, seed=args.seed)
+    prepared_images = _prepare_images_for_extraction(
+        all_images,
+        rename_score_prefixes=args.rename_score_prefixes,
+    )
+    images = _select_images(prepared_images, limit=args.limit, seed=args.seed)
     worker_count = _resolve_worker_count(args.workers)
     run_started = datetime.now(timezone.utc)
     run_id = run_started.strftime("%Y%m%dT%H%M%SZ")
